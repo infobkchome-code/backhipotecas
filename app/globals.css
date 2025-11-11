@@ -1,1 +1,47 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ====== Estilos globales del portal BKC ====== */
+
+html, body {
+  height: 100%;
+  margin: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #f9fafb;
+  color: #111827;
+}
+
+h1, h2, h3 {
+  font-weight: 700;
+}
+
+button {
+  @apply px-4 py-2 rounded-md font-medium transition-colors;
+}
+
+button.primary {
+  @apply bg-emerald-600 text-white hover:bg-emerald-700;
+}
+
+button.secondary {
+  @apply border border-gray-300 text-gray-700 hover:bg-gray-50;
+}
+
+input, select, textarea {
+  @apply border border-gray-300 rounded-md p-2 w-full focus:outline-none focus:ring-2 focus:ring-emerald-500;
+}
+
+a {
+  color: #059669;
+  text-decoration: none;
+}
+a:hover {
+  text-decoration: underline;
+}
+
+/* ====== Layout general ====== */
+.container {
+  @apply max-w-5xl mx-auto px-4;
+}
 
