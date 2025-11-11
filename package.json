@@ -1,1 +1,27 @@
+{
+  "name": "bkc-hipotecas-back",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "dependencies": {
+    "next": "14.2.7",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "@supabase/supabase-js": "^2.45.0",
+    "lucide-react": "^0.365.0"
+  },
+  "devDependencies": {
+    "typescript": "^5",
+    "@types/react": "^18",
+    "@types/node": "^20",
+    "tailwindcss": "^3.4.13",
+    "eslint": "^8.57.0",
+    "eslint-config-next": "14.2.7"
+  }
+}
 
