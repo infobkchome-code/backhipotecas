@@ -1,80 +1,84 @@
-export default function LoginPage() {
-  return (
-    <main
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        background: "linear-gradient(180deg, #0b261f 0%, #0d3b2e 100%)",
-        color: "white",
-        flexDirection: "column",
-        gap: "1.5rem",
-      }}
-    >
-      <h1 style={{ fontSize: "1.8rem", fontWeight: "bold" }}>
-        Acceso clientes
-      </h1>
+"use client";
+import { useState } from "react";
+import { createClient } from "@supabase/supabase-js";
+import { useRouter } from "next/navigation";
 
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
+
+export default function LoginPage() {
+  const router = useRouter();
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      setError(error.message);
+      setLoading(false);
+    } else {
+      // Redirige al portal una vez logueado
+      router.push("/portal");
+    }
+  };
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-100">
       <form
-        style={{
-          backgroundColor: "white",
-          color: "black",
-          padding: "2rem",
-          borderRadius: "1rem",
-          display: "flex",
-          flexDirection: "column",
-          gap: "1rem",
-          width: "100%",
-          maxWidth: "340px",
-          boxShadow: "0 10px 25px rgba(0,0,0,0.15)",
-        }}
+        onSubmit={handleLogin}
+        className="bg-white p-8 rounded-2xl shadow-md w-full max-w-sm"
       >
+        <h2 className="text-xl font-semibold mb-6 text-center">
+          Iniciar sesión
+        </h2>
+
         <input
           type="email"
-          placeholder="Correo electrónico"
-          style={{
-            padding: "0.8rem",
-            borderRadius: "0.5rem",
-            border: "1px solid #ccc",
-          }}
+          placeholder="Email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          className="w-full mb-3 px-4 py-2 border rounded-md"
         />
+
         <input
           type="password"
           placeholder="Contraseña"
-          style={{
-            padding: "0.8rem",
-            borderRadius: "0.5rem",
-            border: "1px solid #ccc",
-          }}
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full mb-3 px-4 py-2 border rounded-md"
         />
+
+        {error && (
+          <p className="text-red-600 text-sm text-center mb-3">{error}</p>
+        )}
+
         <button
           type="submit"
-          style={{
-            backgroundColor: "#c8a34a",
-            color: "#0b261f",
-            fontWeight: "bold",
-            padding: "0.8rem",
-            borderRadius: "0.5rem",
-            border: "none",
-            cursor: "pointer",
-          }}
+          disabled={loading}
+          className="w-full bg-emerald-600 text-white py-2 rounded-md hover:bg-emerald-700 transition"
         >
-          Entrar
+          {loading ? "Accediendo..." : "Entrar"}
         </button>
-      </form>
 
-      <a
-        href="/"
-        style={{
-          color: "#c8a34a",
-          fontSize: "0.9rem",
-          textDecoration: "underline",
-        }}
-      >
-        ← Volver al inicio
-      </a>
-    </main>
+        <p className="text-center text-sm mt-4 text-gray-600">
+          ¿No tienes cuenta?{" "}
+          <a href="/portal/register" className="text-emerald-600 underline">
+            Regístrate
+          </a>
+        </p>
+      </form>
+    </div>
   );
 }
-
