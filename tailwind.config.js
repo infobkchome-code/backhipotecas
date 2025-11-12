@@ -1,6 +1,5 @@
-import type { Config } from 'tailwindcss'
-
-const config: Config = {
+/** @type {import('tailwindcss').Config} */
+module.exports = {
   content: [
     "./app/**/*.{js,ts,jsx,tsx}",
     "./components/**/*.{js,ts,jsx,tsx}"
@@ -21,11 +20,9 @@ const config: Config = {
       },
       borderRadius: {
         xl: "14px",
-        '2xl': "20px"
+        "2xl": "20px"
       }
     },
   },
   plugins: [],
 }
-export default config
-
