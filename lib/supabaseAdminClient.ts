@@ -1,9 +1,7 @@
 // lib/supabaseAdminClient.ts
 import { createClient } from '@supabase/supabase-js';
 
-// ⚠️ OJO: este cliente SOLO se debe usar en el servidor
-// (route handlers, páginas server-side, etc.), nunca en componentes "use client".
-
+// ⚠️ Este cliente es SOLO para el servidor (route handlers, páginas server-side, etc.)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -18,6 +16,3 @@ if (!serviceRoleKey) {
 export const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
   auth: {
     autoRefreshToken: false,
-    persistSession: false,
-  },
-});
