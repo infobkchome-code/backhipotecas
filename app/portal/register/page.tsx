@@ -1,107 +1,181 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { useState } from 'react';
 import { supabase } from '@/lib/supabaseClient';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const [email, setEmail] = useState('');
+
+  const [form, setForm] = useState({
+    nombre: '',
+    apellido: '',
+    telefono: '',
+    email: '',
+    password: '',
+    confirm: '',
+  });
+
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(e: FormEvent) {
+  const handleChange = (e: any) => {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  };
+
+  const handleSubmit = async (e: any) => {
     e.preventDefault();
+    setError('');
     setLoading(true);
-    setMessage(null);
-    setError(null);
 
-    try {
-      // URL a la que volverá el usuario después de confirmar el email
-      const origin =
-        typeof window !== 'undefined'
-          ? window.location.origin
-          : 'https://backhipotecas.vercel.app';
-
-      const redirectTo = `${origin}/portal`;
-
-      const { error } = await supabase.auth.signUp({
-        email,
-        options: {
-          emailRedirectTo: redirectTo,
-        },
-      });
-
-      if (error) {
-        setError(error.message);
-      } else {
-        setMessage(
-          'Te hemos enviado un email de confirmación. Revisa tu bandeja de entrada y haz clic en el enlace para acceder al portal.'
-        );
-      }
-    } catch (err: any) {
-      setError('Ha ocurrido un error al crear el usuario.');
-    } finally {
+    // Validaciones
+    if (!form.nombre || !form.apellido || !form.email || !form.password) {
+      setError('Completa todos los campos obligatorios.');
       setLoading(false);
+      return;
     }
-  }
+
+    if (form.password.length < 6) {
+      setError('La contraseña debe tener mínimo 6 caracteres.');
+      setLoading(false);
+      return;
+    }
+
+    if (form.password !== form.confirm) {
+      setError('Las contraseñas no coinciden.');
+      setLoading(false);
+      return;
+    }
+
+    // 1. Crear usuario en Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: form.email,
+      password: form.password,
+    });
+
+    if (authError) {
+      setError(authError.message);
+      setLoading(false);
+      return;
+    }
+
+    const user = authData.user;
+    if (!user) {
+      setError('No se pudo crear el usuario.');
+      setLoading(false);
+      return;
+    }
+
+    // 2. Crear registro en tabla clientes
+    const { error: insertError } = await supabase.from('clientes').insert({
+      user_id: user.id,
+      nombre: form.nombre + ' ' + form.apellido,
+      email: form.email,
+      telefono: form.telefono,
+    });
+
+    if (insertError) {
+      setError('Usuario creado, pero ocurrió un error guardando los datos.');
+      setLoading(false);
+      return;
+    }
+
+    // 3. Redirigir al login
+    router.push('/portal/login');
+  };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
-      <div className="w-full max-w-md space-y-6">
-        <div className="space-y-2 text-center">
-          <h1 className="text-2xl font-semibold">Crear usuario del portal</h1>
-          <p className="text-sm text-slate-400">
-            Este registro es solo para uso interno de BKC Hipotecas. Introduce tu correo y te enviaremos
-            un enlace de acceso.
-          </p>
-        </div>
+    <div className="min-h-screen flex items-center justify-center bg-slate-950 text-slate-50 px-4">
+      <div className="max-w-md w-full bg-slate-900 p-6 rounded-xl shadow space-y-4">
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-1">
-            <label htmlFor="email" className="text-sm font-medium text-slate-200">
-              Correo electrónico
-            </label>
+        <h1 className="text-xl font-bold">Crear cuenta</h1>
+        <p className="text-sm text-slate-400">
+          Regístrate para acceder a tu panel de seguimiento hipotecario.
+        </p>
+
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <div>
+            <label className="text-sm">Nombre</label>
             <input
-              id="email"
-              type="email"
+              name="nombre"
+              className="w-full mt-1 px-3 py-2 rounded bg-slate-800 border border-slate-700"
+              onChange={handleChange}
               required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-              placeholder="tucorreo@ejemplo.com"
             />
           </div>
 
+          <div>
+            <label className="text-sm">Apellido</label>
+            <input
+              name="apellido"
+              className="w-full mt-1 px-3 py-2 rounded bg-slate-800 border border-slate-700"
+              onChange={handleChange}
+              required
+            />
+          </div>
+
+          <div>
+            <label className="text-sm">Teléfono</label>
+            <input
+              name="telefono"
+              type="tel"
+              className="w-full mt-1 px-3 py-2 rounded bg-slate-800 border border-slate-700"
+              onChange={handleChange}
+            />
+          </div>
+
+          <div>
+            <label className="text-sm">Email</label>
+            <input
+              name="email"
+              type="email"
+              className="w-full mt-1 px-3 py-2 rounded bg-slate-800 border border-slate-700"
+              onChange={handleChange}
+              required
+            />
+          </div>
+
+          <div>
+            <label className="text-sm">Contraseña</label>
+            <input
+              name="password"
+              type="password"
+              className="w-full mt-1 px-3 py-2 rounded bg-slate-800 border border-slate-700"
+              onChange={handleChange}
+              required
+            />
+          </div>
+
+          <div>
+            <label className="text-sm">Confirmar contraseña</label>
+            <input
+              name="confirm"
+              type="password"
+              className="w-full mt-1 px-3 py-2 rounded bg-slate-800 border border-slate-700"
+              onChange={handleChange}
+              required
+            />
+          </div>
+
+          {error && (
+            <div className="text-red-400 text-sm">{error}</div>
+          )}
+
           <button
-            type="submit"
             disabled={loading}
-            className="w-full inline-flex items-center justify-center rounded-lg bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed text-slate-950 text-sm font-medium px-4 py-2 transition"
+            className="w-full bg-emerald-500 hover:bg-emerald-400 text-slate-900 font-semibold py-2 rounded-lg transition disabled:opacity-60"
           >
-            {loading ? 'Enviando enlace…' : 'Crear usuario y enviar enlace'}
+            {loading ? 'Creando cuenta…' : 'Registrarse'}
           </button>
         </form>
 
-        {message && (
-          <div className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/40 rounded-lg px-3 py-2">
-            {message}
-          </div>
-        )}
-
-        {error && (
-          <div className="text-sm text-rose-400 bg-rose-500/10 border border-rose-500/40 rounded-lg px-3 py-2">
-            {error}
-          </div>
-        )}
-
-        <div className="text-sm text-slate-400 text-center">
-          <span>¿Ya tienes usuario?</span>{' '}
+        <p className="text-center text-sm text-slate-400">
+          ¿Ya tienes cuenta?{' '}
           <Link href="/portal/login" className="text-emerald-400 hover:underline">
-            Ir a iniciar sesión
+            Iniciar sesión
           </Link>
-        </div>
+        </p>
       </div>
     </div>
   );
