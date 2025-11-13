@@ -147,10 +147,18 @@ export default function PortalPage() {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error(error);
-        setErrorMsg('No se han podido cargar los clientes.');
-      } else {
-        // Garantizamos que casos sea array
+  console.error('❌ Error cargando clientes desde la API:', error);
+
+  const detalle =
+    error?.message ||
+    error?.error_description ||
+    JSON.stringify(error) ||
+    'No se han podido cargar los clientes.';
+
+  setErrorMsg(detalle);
+  setClientes([]);
+} else {
+  // Garantizamos que casos sea array
         const normalizados = (data || []).map((c: any) => ({
           ...c,
           casos: Array.isArray(c.casos) ? c.casos : [],
