@@ -1,8 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
-import Link from 'next/link';
+
+const ADMIN_EMAILS = ['nahuelbritos@icloud.com']; // ← aquí los correos que SÍ pueden ver el panel interno
 
 type Cliente = {
   id: string;
@@ -10,206 +12,287 @@ type Cliente = {
   email: string;
   telefono: string | null;
   created_at: string;
-  casos?: { id: string }[]; // relación
-  case_id?: string | null;  // id del expediente principal
 };
 
 export default function PortalPage() {
-  const [user, setUser] = useState<any>(null);
-  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const router = useRouter();
+
+  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null); // null = todavía cargando
   const [loading, setLoading] = useState(true);
 
-  const [nombre, setNombre] = useState('');
-  const [email, setEmail] = useState('');
-  const [telefono, setTelefono] = useState('');
+  const [clientes, setClientes] = useState<Cliente[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [form, setForm] = useState({
+    nombre: '',
+    email: '',
+    telefono: '',
+  });
 
-  // 👉 Carga usuario y clientes SOLO de ese usuario
+  // 1) Comprobamos usuario y rol (admin / no admin)
   useEffect(() => {
-    const init = async () => {
+    (async () => {
       const { data, error } = await supabase.auth.getUser();
+
       if (error || !data.user) {
+        setUserEmail(null);
+        setIsAdmin(false);
         setLoading(false);
         return;
       }
 
-      setUser(data.user);
-      await loadClientes(data.user.id);
-    };
+      const email = data.user.email ?? null;
+      setUserEmail(email);
 
-    init();
+      const admin = email !== null && ADMIN_EMAILS.includes(email);
+      setIsAdmin(admin);
+
+      setLoading(false);
+
+      // Si es admin, cargamos clientes
+      if (admin) {
+        await loadClientes();
+      }
+    })();
   }, []);
 
-  const loadClientes = async (userId: string) => {
-    setLoading(true);
+  // 2) Cargar clientes del admin autenticado
+  const loadClientes = async () => {
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) return;
 
-    // Traemos clientes + su caso asociado (casos)
     const { data, error } = await supabase
       .from('clientes')
-      .select('id, nombre, email, telefono, created_at, casos(id)')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: true });
+      .select('*')
+      .eq('user_id', userData.user.id)
+      .order('created_at', { ascending: false });
 
     if (!error && data) {
-      const mapped: Cliente[] = data.map((c: any) => ({
-        ...c,
-        case_id: c.casos && c.casos.length > 0 ? c.casos[0].id : null,
-      }));
-      setClientes(mapped);
+      setClientes(data as Cliente[]);
     }
-
-    setLoading(false);
   };
 
-  // 👉 Crear cliente + crear expediente (caso) asociado
+  // 3) Crear cliente nuevo (usa nuestra API /api/portal/create-client)
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user) return;
+    if (!form.nombre || !form.email) return;
 
-    if (!nombre.trim() || !email.trim()) {
-      alert('Nombre y email son obligatorios');
+    setSaving(true);
+
+    const res = await fetch('/api/portal/create-client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        nombre: form.nombre,
+        email: form.email,
+        telefono: form.telefono || null,
+      }),
+    });
+
+    setSaving(false);
+
+    if (!res.ok) {
+      alert('Error al crear el cliente');
       return;
     }
 
-    // 1. Crear cliente
-    const { data: cli, error: errCliente } = await supabase
-      .from('clientes')
+    setForm({ nombre: '', email: '', telefono: '' });
+    await loadClientes();
+  };
+
+  // 4) Abrir expediente de un cliente
+  const handleOpenCase = async (clienteId: string) => {
+    // buscamos o creamos un caso por cliente
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData?.user) return;
+
+    // ¿ya hay caso?
+    const { data: casos, error } = await supabase
+      .from('casos')
+      .select('id')
+      .eq('user_id', userData.user.id)
+      .eq('cliente_id', clienteId)
+      .limit(1)
+      .maybeSingle();
+
+    if (!error && casos?.id) {
+      router.push(`/portal/case/${casos.id}`);
+      return;
+    }
+
+    // si no hay, lo creamos
+    const { data: nuevo, error: createError } = await supabase
+      .from('casos')
       .insert({
-        user_id: user.id,
-        nombre: nombre.trim(),
-        email: email.trim(),
-        telefono: telefono.trim() || null,
+        user_id: userData.user.id,
+        cliente_id: clienteId,
+        titulo: 'Expediente hipotecario',
+        estado: 'en_estudio',
+        progreso: 0,
+        notas: 'Expediente creado automáticamente.',
       })
       .select('id')
       .single();
 
-    if (errCliente || !cli) {
-      console.error(errCliente);
-      alert('Error creando el cliente');
+    if (createError || !nuevo) {
+      alert('No se pudo crear el expediente');
       return;
     }
 
-    // 2. Crear expediente (caso) inicial para ese cliente
-    const { error: errCaso } = await supabase
-      .from('casos')
-      .insert({
-        user_id: user.id,
-        cliente_id: cli.id,
-        titulo: `Expediente ${nombre.trim()}`,
-        estado: 'en_estudio',
-        progreso: 0,
-        notas: 'Expediente creado automáticamente.',
-      });
-
-    if (errCaso) {
-      console.error(errCaso);
-      alert('Cliente creado, pero hubo un problema creando el expediente.');
-    }
-
-    // 3. Recargar lista
-    setNombre('');
-    setEmail('');
-    setTelefono('');
-    await loadClientes(user.id);
+    router.push(`/portal/case/${nuevo.id}`);
   };
 
-  const formatDate = (iso: string) =>
-    new Date(iso).toLocaleDateString('es-ES', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.push('/portal/login');
+  };
 
-  if (loading && !user) {
-    return <div className="p-6 text-gray-200">Cargando…</div>;
+  // --------------- RENDER ---------------
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
+        <div className="text-sm text-slate-300">Cargando…</div>
+      </div>
+    );
   }
 
-  if (!user) {
+  // No hay usuario logueado
+  if (!userEmail) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-950 text-gray-100">
-        <div className="bg-gray-900 border border-gray-700 rounded-xl p-8 max-w-md w-full text-center space-y-4">
-          <h1 className="text-xl font-semibold">Necesitas iniciar sesión</h1>
-          <p className="text-sm text-gray-400">
-            Accede desde el enlace de confirmación que te hemos enviado por correo.
-          </p>
+      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
+        <div className="space-y-4 text-center">
+          <p className="text-sm text-slate-300">No has iniciado sesión.</p>
+          <button
+            onClick={() => router.push('/portal/login')}
+            className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400"
+          >
+            Ir al login del panel interno
+          </button>
         </div>
       </div>
     );
   }
 
+  // Usuario logueado pero NO es admin → no ve panel interno
+  if (isAdmin === false) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
+        <div className="max-w-md w-full space-y-4 text-center">
+          <h1 className="text-xl font-semibold">Acceso solo interno</h1>
+          <p className="text-sm text-slate-400">
+            Este panel es solo para uso interno de BKC Hipotecas.
+          </p>
+          <p className="text-xs text-slate-500">
+            Has iniciado sesión como <span className="font-mono">{userEmail}</span>, 
+            pero este correo no está autorizado como administrador.
+          </p>
+          <button
+            onClick={handleLogout}
+            className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400"
+          >
+            Cerrar sesión
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Admin autenticado → panel interno completo
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100">
-      <header className="border-b border-gray-800 px-6 py-4 flex items-center justify-between">
+    <div className="min-h-screen bg-slate-950 text-slate-50">
+      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
         <div>
-          <div className="text-xs uppercase tracking-widest text-emerald-400">
+          <div className="text-xs uppercase tracking-wide text-emerald-400">
             Panel interno · BKC Hipotecas
           </div>
-          <h1 className="text-xl font-semibold">Clientes de hipoteca</h1>
-          <p className="text-xs text-gray-400">
-            Desde aquí ves todos los clientes y accedes a su expediente.
+          <h1 className="text-xl font-semibold mt-1">Clientes de hipoteca</h1>
+          <p className="text-xs text-slate-400">
+            Desde aquí ves todos tus clientes y accedes a su expediente.
           </p>
         </div>
-        <div className="text-xs text-gray-400">
-          Sesión: <span className="font-mono">{user.email}</span>
+        <div className="flex items-center gap-3 text-xs text-slate-400">
+          <span className="font-mono text-slate-300">{userEmail}</span>
+          <button
+            onClick={handleLogout}
+            className="rounded-lg border border-slate-700 px-3 py-1 hover:bg-slate-800"
+          >
+            Cerrar sesión
+          </button>
         </div>
       </header>
 
-      <main className="max-w-5xl mx-auto px-4 py-8 space-y-8">
+      <main className="max-w-5xl mx-auto px-6 py-8 space-y-6">
         {/* Formulario nuevo cliente */}
-        <section className="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-4">
-          <h2 className="text-sm font-semibold text-gray-100">Nuevo cliente</h2>
-          <form
-            onSubmit={handleCreateClient}
-            className="flex flex-col md:flex-row gap-3"
-          >
-            <input
-              className="flex-1 rounded-lg bg-gray-950 border border-gray-800 px-3 py-2 text-sm outline-none focus:border-emerald-500"
-              placeholder="Nombre"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-            />
-            <input
-              className="flex-1 rounded-lg bg-gray-950 border border-gray-800 px-3 py-2 text-sm outline-none focus:border-emerald-500"
-              placeholder="Email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-            <input
-              className="flex-1 rounded-lg bg-gray-950 border border-gray-800 px-3 py-2 text-sm outline-none focus:border-emerald-500"
-              placeholder="Teléfono"
-              value={telefono}
-              onChange={(e) => setTelefono(e.target.value)}
-            />
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-sm font-semibold text-gray-900"
-            >
-              Guardar cliente
-            </button>
-          </form>
-          <p className="text-xs text-gray-500">
+        <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-4 space-y-3">
+          <h2 className="text-sm font-medium text-slate-100">
+            Nuevo cliente
+          </h2>
+          <p className="text-xs text-slate-400">
             Más adelante podremos importar clientes desde Excel o desde tu CRM.
           </p>
+
+          <form
+            onSubmit={handleCreateClient}
+            className="grid grid-cols-1 md:grid-cols-4 gap-3 items-end"
+          >
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-400">Nombre</label>
+              <input
+                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                value={form.nombre}
+                onChange={e => setForm({ ...form, nombre: e.target.value })}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-400">Email</label>
+              <input
+                type="email"
+                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                value={form.email}
+                onChange={e => setForm({ ...form, email: e.target.value })}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-slate-400">Teléfono</label>
+              <input
+                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm outline-none focus:border-emerald-500"
+                value={form.telefono}
+                onChange={e => setForm({ ...form, telefono: e.target.value })}
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={saving}
+              className="h-[38px] rounded-lg bg-emerald-500 text-sm font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {saving ? 'Guardando…' : 'Guardar cliente'}
+            </button>
+          </form>
         </section>
 
         {/* Tabla de clientes */}
-        <section className="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-800 flex items-center justify-between text-xs text-gray-400">
-            <span>Listado de clientes</span>
-            <span>
-              {clientes.length} registro{clientes.length !== 1 && 's'}
+        <section className="bg-slate-900/60 border border-slate-800 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800">
+            <h2 className="text-sm font-medium text-slate-100">
+              Listado de clientes
+            </h2>
+            <span className="text-xs text-slate-500">
+              {clientes.length} registro{clientes.length !== 1 ? 's' : ''}
             </span>
           </div>
 
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm">
-              <thead className="bg-gray-900/60">
-                <tr className="text-left text-xs text-gray-400 uppercase">
-                  <th className="px-4 py-2">Nombre</th>
-                  <th className="px-4 py-2">Email</th>
-                  <th className="px-4 py-2">Teléfono</th>
-                  <th className="px-4 py-2">Alta</th>
-                  <th className="px-4 py-2 text-right">Acciones</th>
+              <thead>
+                <tr className="bg-slate-900/80 text-xs text-slate-400">
+                  <th className="px-4 py-2 text-left font-normal">Nombre</th>
+                  <th className="px-4 py-2 text-left font-normal">Email</th>
+                  <th className="px-4 py-2 text-left font-normal">Teléfono</th>
+                  <th className="px-4 py-2 text-left font-normal">Alta</th>
+                  <th className="px-4 py-2 text-left font-normal">Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -217,39 +300,35 @@ export default function PortalPage() {
                   <tr>
                     <td
                       colSpan={5}
-                      className="px-4 py-6 text-center text-xs text-gray-500"
+                      className="px-4 py-6 text-center text-xs text-slate-500"
                     >
-                      Todavía no hay clientes. Crea el primero con el formulario de arriba.
+                      Aún no tienes clientes creados.
                     </td>
                   </tr>
                 )}
 
-                {clientes.map((c) => (
+                {clientes.map(c => (
                   <tr
                     key={c.id}
-                    className="border-t border-gray-800 hover:bg-gray-800/40"
+                    className="border-t border-slate-800/80 hover:bg-slate-900/80"
                   >
                     <td className="px-4 py-2">{c.nombre}</td>
-                    <td className="px-4 py-2 text-gray-300">{c.email}</td>
-                    <td className="px-4 py-2 text-gray-300">
+                    <td className="px-4 py-2 text-slate-300">{c.email}</td>
+                    <td className="px-4 py-2 text-slate-300">
                       {c.telefono || '—'}
                     </td>
-                    <td className="px-4 py-2 text-gray-300">
-                      {formatDate(c.created_at)}
+                    <td className="px-4 py-2 text-xs text-slate-500">
+                      {c.created_at
+                        ? new Date(c.created_at).toLocaleDateString('es-ES')
+                        : '—'}
                     </td>
-                    <td className="px-4 py-2 text-right">
-                      {c.case_id ? (
-                        <Link
-                          href={`/portal/case/${c.case_id}`}
-                          className="inline-flex items-center px-3 py-1.5 rounded-lg text-xs font-medium bg-gray-800 hover:bg-gray-700 text-emerald-300"
-                        >
-                          Ver expediente →
-                        </Link>
-                      ) : (
-                        <span className="text-xs text-gray-500">
-                          Sin expediente
-                        </span>
-                      )}
+                    <td className="px-4 py-2">
+                      <button
+                        onClick={() => handleOpenCase(c.id)}
+                        className="text-xs text-emerald-400 hover:text-emerald-300"
+                      >
+                        Ver expediente →
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -257,6 +336,10 @@ export default function PortalPage() {
             </table>
           </div>
         </section>
+
+        <p className="text-[11px] text-slate-500">
+          Panel interno BKC Home · Gestión de hipotecas
+        </p>
       </main>
     </div>
   );
