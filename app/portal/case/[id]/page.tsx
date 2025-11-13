@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, ChangeEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 import Link from 'next/link';
@@ -13,6 +13,11 @@ type Caso = {
   notas: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type FileItem = {
+  name: string;
+  created_at: string | null;
 };
 
 const ESTADOS = [
@@ -41,7 +46,16 @@ export default function CaseDetailPage() {
   const [progreso, setProgreso] = useState(0);
   const [notas, setNotas] = useState('');
 
-  // Cargar caso
+  // Documentos
+  const [files, setFiles] = useState<FileItem[]>([]);
+  const [fileToUpload, setFileToUpload] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [docsMsg, setDocsMsg] = useState<string | null>(null);
+
+  // Guardamos el userId en estado para reutilizarlo en Storage
+  const [userId, setUserId] = useState<string | null>(null);
+
+  // Carga del caso y del userId
   useEffect(() => {
     const fetchCase = async () => {
       setLoading(true);
@@ -58,6 +72,8 @@ export default function CaseDetailPage() {
         setLoading(false);
         return;
       }
+
+      setUserId(user.id);
 
       const { data, error } = await supabase
         .from('casos')
@@ -99,6 +115,39 @@ export default function CaseDetailPage() {
     }
   }, [id]);
 
+  // Cargar documentos de este expediente
+  useEffect(() => {
+    const loadDocs = async () => {
+      if (!userId || !id) return;
+
+      setDocsMsg(null);
+
+      const prefix = `${userId}/${id}`;
+      const { data, error } = await supabase.storage
+        .from('docs')
+        .list(prefix, {
+          limit: 100,
+          offset: 0,
+        });
+
+      if (error) {
+        console.error('Error listando docs:', error);
+        setDocsMsg('No se han podido cargar los documentos.');
+        return;
+      }
+
+      const mapped: FileItem[] =
+        data?.map((f) => ({
+          name: f.name,
+          created_at: f.created_at ?? null,
+        })) ?? [];
+
+      setFiles(mapped);
+    };
+
+    loadDocs();
+  }, [userId, id]);
+
   const handleSave = async () => {
     if (!caso) return;
     setSaving(true);
@@ -135,6 +184,80 @@ export default function CaseDetailPage() {
 
     setSuccessMsg('Cambios guardados correctamente.');
     setSaving(false);
+  };
+
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] ?? null;
+    setFileToUpload(file);
+    setDocsMsg(null);
+  };
+
+  const handleUpload = async () => {
+    if (!fileToUpload || !userId || !caso) return;
+    setUploading(true);
+    setDocsMsg(null);
+
+    try {
+      const ext = fileToUpload.name.split('.').pop();
+      const timestamp = Date.now();
+      const safeName = fileToUpload.name.replace(/\s+/g, '_');
+      const path = `${userId}/${caso.id}/${timestamp}_${safeName}`;
+
+      const { error } = await supabase.storage
+        .from('docs')
+        .upload(path, fileToUpload);
+
+      if (error) {
+        console.error('Error subiendo archivo:', error);
+        setDocsMsg('No se ha podido subir el documento.');
+        setUploading(false);
+        return;
+      }
+
+      // Recargar listado
+      const { data, error: listError } = await supabase.storage
+        .from('docs')
+        .list(`${userId}/${caso.id}`, { limit: 100, offset: 0 });
+
+      if (listError) {
+        console.error('Error recargando docs:', listError);
+        setDocsMsg('Documento subido, pero no se pudo refrescar la lista.');
+        setUploading(false);
+        return;
+      }
+
+      const mapped: FileItem[] =
+        data?.map((f) => ({
+          name: f.name,
+          created_at: f.created_at ?? null,
+        })) ?? [];
+
+      setFiles(mapped);
+      setFileToUpload(null);
+      setDocsMsg('Documento subido correctamente.');
+      setUploading(false);
+    } catch (err) {
+      console.error(err);
+      setDocsMsg('Error inesperado subiendo el documento.');
+      setUploading(false);
+    }
+  };
+
+  const handleDownload = async (fileName: string) => {
+    if (!userId || !caso) return;
+    const path = `${userId}/${caso.id}/${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from('docs')
+      .createSignedUrl(path, 60 * 10); // 10 minutos
+
+    if (error || !data?.signedUrl) {
+      console.error('Error creando signed URL:', error);
+      setDocsMsg('No se ha podido descargar el documento.');
+      return;
+    }
+
+    window.open(data.signedUrl, '_blank');
   };
 
   if (loading) {
@@ -182,8 +305,8 @@ export default function CaseDetailPage() {
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-6 py-6 space-y-4">
-        {/* Mensajes */}
+      <main className="max-w-4xl mx-auto px-6 py-6 space-y-6">
+        {/* Mensajes generales */}
         {errorMsg && (
           <div className="rounded-md border border-red-600 bg-red-950/60 px-4 py-2 text-sm text-red-100">
             {errorMsg}
@@ -195,11 +318,15 @@ export default function CaseDetailPage() {
           </div>
         )}
 
-        {/* Formulario de edición */}
+        {/* Bloque: datos del expediente */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
+          <h2 className="text-sm font-semibold text-slate-200">
+            Estado del expediente
+          </h2>
+
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">
-              Estado del expediente
+              Estado
             </label>
             <select
               value={estado}
@@ -229,7 +356,9 @@ export default function CaseDetailPage() {
             <div className="mt-1 h-2 w-full bg-slate-800 rounded-full overflow-hidden">
               <div
                 className="h-2 bg-emerald-500 transition-all"
-                style={{ width: `${Math.min(100, Math.max(0, progreso))}%` }}
+                style={{
+                  width: `${Math.min(100, Math.max(0, progreso))}%`,
+                }}
               />
             </div>
           </div>
@@ -239,7 +368,7 @@ export default function CaseDetailPage() {
               Notas internas
             </label>
             <textarea
-              rows={5}
+              rows={4}
               value={notas}
               onChange={(e) => setNotas(e.target.value)}
               className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
@@ -263,6 +392,91 @@ export default function CaseDetailPage() {
             >
               {saving ? 'Guardando…' : 'Guardar cambios'}
             </button>
+          </div>
+        </section>
+
+        {/* Bloque: Documentación */}
+        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-semibold text-slate-200">
+              Documentación del expediente
+            </h2>
+          </div>
+
+          {docsMsg && (
+            <div className="rounded-md border border-slate-700 bg-slate-950/70 px-4 py-2 text-xs text-slate-200">
+              {docsMsg}
+            </div>
+          )}
+
+          <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">
+            <input
+              type="file"
+              onChange={handleFileChange}
+              className="text-xs text-slate-300"
+            />
+            <button
+              type="button"
+              onClick={handleUpload}
+              disabled={!fileToUpload || uploading}
+              className="px-4 py-2 rounded-md bg-slate-100 text-slate-900 text-xs font-medium hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {uploading ? 'Subiendo…' : 'Subir documento'}
+            </button>
+          </div>
+
+          <div className="mt-3 border border-slate-800 rounded-md overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-900/80 text-slate-400">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">
+                    Nombre del archivo
+                  </th>
+                  <th className="px-3 py-2 text-left font-medium">
+                    Fecha de alta
+                  </th>
+                  <th className="px-3 py-2 text-left font-medium">
+                    Acción
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {files.length === 0 && (
+                  <tr>
+                    <td
+                      colSpan={3}
+                      className="px-3 py-3 text-center text-slate-500"
+                    >
+                      Aún no hay documentos subidos para este expediente.
+                    </td>
+                  </tr>
+                )}
+                {files.map((f) => (
+                  <tr
+                    key={f.name}
+                    className="border-t border-slate-800 hover:bg-slate-900/50"
+                  >
+                    <td className="px-3 py-2 text-slate-100 break-all">
+                      {f.name}
+                    </td>
+                    <td className="px-3 py-2 text-slate-400">
+                      {f.created_at
+                        ? new Date(f.created_at).toLocaleString('es-ES')
+                        : '-'}
+                    </td>
+                    <td className="px-3 py-2">
+                      <button
+                        type="button"
+                        onClick={() => handleDownload(f.name)}
+                        className="text-emerald-400 hover:underline"
+                      >
+                        Descargar
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </section>
       </main>
