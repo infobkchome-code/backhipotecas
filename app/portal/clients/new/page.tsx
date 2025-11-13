@@ -1,129 +1,157 @@
-"use client";
+'use client';
 
-import { FormEvent, useState } from "react";
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function NewClientPage() {
-  const [nombre, setNombre] = useState("");
-  const [email, setEmail] = useState("");
-  const [telefono, setTelefono] = useState("");
+  const router = useRouter();
+
+  const [nombre, setNombre] = useState('');
+  const [email, setEmail] = useState('');
+  const [telefono, setTelefono] = useState('');
   const [loading, setLoading] = useState(false);
-  const [okMsg, setOkMsg] = useState<string | null>(null);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
-  async function handleSubmit(e: FormEvent) {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setLoading(true);
-    setOkMsg(null);
-    setErrorMsg(null);
 
-    try {
-      const res = await fetch("/api/portal/create-client", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ nombre, email, telefono }),
-      });
+    // 1) Usuario autenticado
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-      const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "No se pudo crear el cliente");
-      }
-
-      setOkMsg("✅ Cliente creado correctamente.");
-      setNombre("");
-      setEmail("");
-      setTelefono("");
-    } catch (err: any) {
-      setErrorMsg(err.message || "Error inesperado al crear el cliente");
-    } finally {
+    if (authError) {
+      setError('Error al obtener el usuario autenticado.');
       setLoading(false);
+      return;
     }
-  }
+
+    if (!user) {
+      setError('Usuario no autenticado.');
+      setLoading(false);
+      return;
+    }
+
+    // 2) Insertar cliente con user_id = user.id
+    const { data: cliente, error: insertError } = await supabase
+      .from('clientes')
+      .insert([
+        {
+          user_id: user.id,                // 👈 CLAVE PARA PASAR LA RLS
+          nombre: nombre.trim(),
+          email: email.trim(),
+          telefono: telefono.trim() || null,
+        },
+      ])
+      .select()
+      .single();
+
+    if (insertError || !cliente) {
+      console.error(insertError);
+      setError(insertError?.message || 'No se pudo crear el cliente.');
+      setLoading(false);
+      return;
+    }
+
+    // 3) Crear caso inicial para este cliente (opcional, pero útil)
+    const { error: casoError } = await supabase.from('casos').insert([
+      {
+        user_id: user.id,
+        cliente_id: cliente.id,
+        titulo: `Expediente ${cliente.nombre}`,
+        estado: 'en_estudio',
+        progreso: 0,
+        notas: 'Expediente creado automáticamente.',
+      },
+    ]);
+
+    if (casoError) {
+      console.error(casoError);
+      // No bloqueamos al usuario, solo avisar si quieres
+    }
+
+    setLoading(false);
+
+    // 4) Volver al panel principal
+    router.push('/portal');
+  };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center px-4 py-8">
-      <div className="w-full max-w-lg space-y-6">
-        <header>
-          <p className="text-xs uppercase tracking-wide text-emerald-400/80">
-            Panel Hipotecas BKC
+    <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
+      <div className="max-w-lg w-full space-y-6">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-emerald-400">
+            Panel hipotecas BKC
           </p>
-          <h1 className="mt-1 text-2xl font-bold">
-            Nuevo cliente
-          </h1>
-          <p className="mt-2 text-sm text-slate-300/80">
-            Crea un cliente para hacer el seguimiento de su hipoteca
-            (casos, documentos, mensajes…).
+          <h1 className="text-2xl font-semibold mt-1">Nuevo cliente</h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Crea un cliente para hacer el seguimiento de su hipoteca (casos, documentos, mensajes…).
           </p>
-        </header>
+        </div>
 
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-4 rounded-xl bg-slate-900/80 border border-slate-700/70 px-5 py-6 shadow-xl"
-        >
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Nombre completo</label>
+        <form onSubmit={handleSubmit} className="space-y-4 bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-200">
+              Nombre completo
+            </label>
             <input
               type="text"
-              required
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
-              className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-              placeholder="Ej: Ángel y Ale"
+              required
+              className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              placeholder="Ej. Juan Pérez"
             />
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Email</label>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-200">
+              Email
+            </label>
             <input
               type="email"
-              required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
+              required
+              className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
               placeholder="cliente@correo.com"
             />
           </div>
 
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium">Teléfono</label>
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-200">
+              Teléfono
+            </label>
             <input
               type="tel"
               value={telefono}
               onChange={(e) => setTelefono(e.target.value)}
-              className="w-full rounded-lg border border-slate-600 bg-slate-950 px-3 py-2 text-sm outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-              placeholder="+34 600 000 000"
+              className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+              placeholder="Ej. 600123123"
             />
           </div>
+
+          {error && (
+            <div className="rounded-lg bg-red-950/50 border border-red-600/60 px-3 py-2 text-xs text-red-200">
+              {error}
+            </div>
+          )}
 
           <button
             type="submit"
             disabled={loading}
-            className="mt-2 inline-flex w-full items-center justify-center rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-slate-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60"
+            className="w-full inline-flex items-center justify-center rounded-lg bg-emerald-500 text-slate-950 text-sm font-semibold py-2.5 hover:bg-emerald-400 transition disabled:opacity-60"
           >
-            {loading ? "Guardando..." : "Crear cliente"}
+            {loading ? 'Creando cliente…' : 'Crear cliente'}
           </button>
 
-          {okMsg && (
-            <p className="mt-2 rounded-md bg-emerald-500/10 border border-emerald-500/40 px-3 py-2 text-xs text-emerald-300">
-              {okMsg}
-            </p>
-          )}
-
-          {errorMsg && (
-            <p className="mt-2 rounded-md bg-red-500/10 border border-red-500/40 px-3 py-2 text-xs text-red-300">
-              {errorMsg}
-            </p>
-          )}
+          <p className="text-[11px] text-slate-500 text-center">
+            Los datos se guardan en Supabase en la tabla <span className="font-mono">clientes</span>, 
+            asociados a tu usuario de BKC (<span className="font-mono">auth.users</span>).
+          </p>
         </form>
-
-        <p className="text-[11px] text-slate-400/80">
-          Los datos se guardan en Supabase en la tabla <code>clientes</code>,
-          asociados a tu usuario de BKC (auth.users).
-        </p>
       </div>
     </div>
   );
 }
-
