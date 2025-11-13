@@ -4,6 +4,15 @@ import { useEffect, useState, ChangeEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
+type Cliente = {
+  id: string;
+  user_id: string;
+  nombre: string;
+  email: string;
+  telefono: string | null;
+  created_at: string;
+};
+
 type Caso = {
   id: string;
   user_id: string;
@@ -16,40 +25,20 @@ type Caso = {
   updated_at: string;
 };
 
-type Cliente = {
-  id: string;
-  nombre: string;
-  email: string;
-  telefono: string | null;
-  created_at: string;
-};
-
-type Expediente = {
-  id: string;
-  user_id: string;
-  caso_id: string;
-  step_key: string;
-  created_at: string;
-  updated_at: string;
-};
-
-type DocFile = {
-  name: string;
-};
+type DocFile = { name: string };
 
 export default function CaseDetailPage() {
+  // ⚠️ Este id es el ID DEL CLIENTE
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
-  const [caso, setCaso] = useState<Caso | null>(null);
   const [cliente, setCliente] = useState<Cliente | null>(null);
-  const [expedientes, setExpedientes] = useState<Expediente[]>([]);
+  const [caso, setCaso] = useState<Caso | null>(null);
   const [docs, setDocs] = useState<DocFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Carga principal de datos
   useEffect(() => {
     if (!id) return;
 
@@ -67,45 +56,68 @@ export default function CaseDetailPage() {
         return;
       }
 
-      // 1) Caso
-      const { data: casoData, error: casoError } = await supabase
-        .from<Caso>('casos')
+      // 1) Cargar cliente
+      const { data: clienteData, error: clienteError } = await supabase
+        .from<Cliente>('clientes')
         .select('*')
-        .eq('id', id)
+        .eq('id', id)          // id de la URL = id del cliente
         .eq('user_id', user.id)
         .single();
 
-      if (casoError || !casoData) {
-        setErrorMsg('Caso no encontrado.');
+      if (clienteError || !clienteData) {
+        setErrorMsg('Cliente no encontrado.');
         setLoading(false);
         return;
       }
 
-      setCaso(casoData);
+      setCliente(clienteData);
 
-      // 2) Cliente del caso
-      const { data: clienteData } = await supabase
-        .from<Cliente>('clientes')
+      // 2) Buscar caso de ese cliente, o crearlo si no existe
+      const { data: casosData, error: casosError } = await supabase
+        .from<Caso>('casos')
         .select('*')
-        .eq('id', casoData.cliente_id)
+        .eq('cliente_id', clienteData.id)
         .eq('user_id', user.id)
-        .single();
+        .limit(1);
 
-      if (clienteData) setCliente(clienteData);
+      let casoFinal: Caso | null = null;
 
-      // 3) Expedientes ligados a este caso
-      const { data: expData } = await supabase
-        .from<Expediente>('expedientes')
-        .select('*')
-        .eq('caso_id', casoData.id)
-        .eq('user_id', user.id)
-        .order('created_at', { ascending: true });
+      if (casosError) {
+        setErrorMsg(casosError.message);
+        setLoading(false);
+        return;
+      }
 
-      if (expData) setExpedientes(expData);
+      if (!casosData || casosData.length === 0) {
+        // No hay caso todavía → creamos uno por defecto
+        const { data: nuevoCaso, error: insertError } = await supabase
+          .from<Caso>('casos')
+          .insert({
+            user_id: user.id,
+            cliente_id: clienteData.id,
+            titulo: `Expediente ${clienteData.nombre}`,
+            estado: 'en_estudio',
+            progreso: 0,
+            notas: 'Expediente creado automáticamente.',
+          })
+          .select('*')
+          .single();
 
-      // 4) Documentos en el bucket docs (ruta: userId/casoId/...)
-      const path = `${user.id}/${casoData.id}`;
+        if (insertError || !nuevoCaso) {
+          setErrorMsg('No se ha podido crear el expediente.');
+          setLoading(false);
+          return;
+        }
 
+        casoFinal = nuevoCaso;
+      } else {
+        casoFinal = casosData[0];
+      }
+
+      setCaso(casoFinal);
+
+      // 3) Listar documentos del bucket docs
+      const path = `${user.id}/${casoFinal.id}`;
       const { data: files, error: storageError } = await supabase.storage
         .from('docs')
         .list(path, { limit: 100 });
@@ -118,7 +130,7 @@ export default function CaseDetailPage() {
     })();
   }, [id]);
 
-  // Subir documento
+  // Subida de documentos
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !caso) return;
@@ -146,7 +158,6 @@ export default function CaseDetailPage() {
       if (uploadError) {
         setErrorMsg(uploadError.message);
       } else {
-        // Volvemos a listar los docs
         const { data: files } = await supabase.storage
           .from('docs')
           .list(`${user.id}/${caso.id}`, { limit: 100 });
@@ -155,9 +166,11 @@ export default function CaseDetailPage() {
       }
     } finally {
       setUploading(false);
-      e.target.value = ''; // limpiar input
+      e.target.value = '';
     }
   };
+
+  // -------- UI --------
 
   if (loading) {
     return <div className="p-6 text-slate-100">Cargando expediente…</div>;
@@ -177,10 +190,10 @@ export default function CaseDetailPage() {
     );
   }
 
-  if (!caso) {
+  if (!cliente || !caso) {
     return (
       <div className="p-6 text-slate-100">
-        Caso no encontrado.
+        No se ha podido cargar el expediente.
         <button
           onClick={() => router.push('/portal')}
           className="ml-2 text-sm underline text-sky-400"
@@ -194,7 +207,6 @@ export default function CaseDetailPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
-        {/* Breadcrumb */}
         <button
           onClick={() => router.push('/portal')}
           className="text-sm text-sky-400 hover:text-sky-300 mb-2"
@@ -202,45 +214,35 @@ export default function CaseDetailPage() {
           ← Volver al panel de clientes
         </button>
 
-        {/* Cabecera */}
         <div className="flex flex-col gap-2">
           <h1 className="text-3xl font-semibold tracking-tight">
             Expediente hipotecario
           </h1>
           <p className="text-sm text-slate-400">
-            Seguimiento completo del cliente y su operación.
+            Seguimiento del cliente y gestión de documentación.
           </p>
         </div>
 
-        {/* Grid principal */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Columna izquierda: info cliente + caso */}
+          {/* Cliente + caso */}
           <div className="lg:col-span-2 space-y-6">
-            {/* Info del cliente */}
             <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
               <h2 className="text-lg font-semibold mb-3">Datos del cliente</h2>
-              {cliente ? (
-                <div className="space-y-1 text-sm">
-                  <div className="font-medium text-slate-100">
-                    {cliente.nombre}
-                  </div>
-                  <div className="text-slate-300">{cliente.email}</div>
-                  {cliente.telefono && (
-                    <div className="text-slate-300">{cliente.telefono}</div>
-                  )}
-                  <div className="text-xs text-slate-500 mt-2">
-                    Alta en el sistema:{' '}
-                    {new Date(cliente.created_at).toLocaleDateString('es-ES')}
-                  </div>
+              <div className="space-y-1 text-sm">
+                <div className="font-medium text-slate-100">
+                  {cliente.nombre}
                 </div>
-              ) : (
-                <div className="text-sm text-slate-400">
-                  No se han encontrado datos del cliente.
+                <div className="text-slate-300">{cliente.email}</div>
+                {cliente.telefono && (
+                  <div className="text-slate-300">{cliente.telefono}</div>
+                )}
+                <div className="text-xs text-slate-500 mt-2">
+                  Alta:{' '}
+                  {new Date(cliente.created_at).toLocaleDateString('es-ES')}
                 </div>
-              )}
+              </div>
             </div>
 
-            {/* Info del caso */}
             <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -255,7 +257,6 @@ export default function CaseDetailPage() {
                 </span>
               </div>
 
-              {/* Barra de progreso */}
               <div className="space-y-2">
                 <div className="flex justify-between text-xs text-slate-400">
                   <span>Progreso del expediente</span>
@@ -264,12 +265,13 @@ export default function CaseDetailPage() {
                 <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
                   <div
                     className="h-full bg-emerald-500 transition-all"
-                    style={{ width: `${Math.min(Math.max(caso.progreso, 0), 100)}%` }}
+                    style={{
+                      width: `${Math.min(Math.max(caso.progreso, 0), 100)}%`,
+                    }}
                   />
                 </div>
               </div>
 
-              {/* Notas internas */}
               <div className="mt-4">
                 <h3 className="text-sm font-medium mb-1">Notas internas</h3>
                 <p className="text-sm text-slate-200 whitespace-pre-wrap bg-slate-950/40 border border-slate-800 rounded-xl p-3">
@@ -279,41 +281,14 @@ export default function CaseDetailPage() {
                 </p>
               </div>
             </div>
-
-            {/* Línea temporal de expedientes/pasos */}
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-              <h2 className="text-lg font-semibold mb-3">
-                Línea temporal del expediente
-              </h2>
-              {expedientes.length === 0 ? (
-                <p className="text-sm text-slate-400">
-                  Aún no hay pasos registrados en este expediente.
-                </p>
-              ) : (
-                <ol className="relative border-l border-slate-700/60 ml-2 space-y-4">
-                  {expedientes.map((e) => (
-                    <li key={e.id} className="ml-4">
-                      <div className="absolute -left-[9px] mt-1 h-3 w-3 rounded-full bg-emerald-400 shadow-[0_0_0_4px_rgba(16,185,129,0.2)]" />
-                      <div className="text-xs text-slate-400">
-                        {new Date(e.created_at).toLocaleString('es-ES')}
-                      </div>
-                      <div className="text-sm font-medium text-slate-100">
-                        {e.step_key}
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </div>
           </div>
 
-          {/* Columna derecha: documentación */}
+          {/* Documentación */}
           <div className="space-y-6">
             <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
               <h2 className="text-lg font-semibold mb-3">Documentación</h2>
               <p className="text-xs text-slate-400 mb-3">
-                Sube aquí los documentos del cliente (DNI, nóminas, contrato,
-                vida laboral, IRPF, nota simple, tasación, etc.).
+                Sube aquí DNI, nóminas, IRPF, contrato, etc.
               </p>
 
               <label className="block">
@@ -354,7 +329,7 @@ export default function CaseDetailPage() {
                       >
                         <span className="truncate">{f.name}</span>
                         <span className="text-[10px] text-slate-500">
-                          (Disponible desde el panel interno)
+                          (guardado en Supabase)
                         </span>
                       </li>
                     ))}
@@ -363,15 +338,11 @@ export default function CaseDetailPage() {
               </div>
             </div>
 
-            {/* Bloque info rápida */}
             <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-400 space-y-2">
+              <p>✅ Cada cliente tiene su expediente único.</p>
               <p>
-                ✅ Solo tú puedes ver y gestionar este expediente y sus
-                documentos.
-              </p>
-              <p>
-                ✅ Cada cliente tendrá su propio acceso en el futuro para ver el
-                estado y la documentación.
+                ✅ Solo tú (usuario autenticado) puedes ver estos datos en el
+                portal interno.
               </p>
             </div>
           </div>
