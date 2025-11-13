@@ -1,350 +1,367 @@
 'use client';
 
-import { useEffect, useState, ChangeEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-type Cliente = {
+type CasoDetalle = {
   id: string;
-  user_id: string;
-  nombre: string;
-  email: string;
-  telefono: string | null;
-  created_at: string;
-};
-
-type Caso = {
-  id: string;
-  user_id: string;
-  cliente_id: string;
   titulo: string;
   estado: string;
   progreso: number;
   notas: string | null;
   created_at: string;
-  updated_at: string;
+  clientes?: {
+    nombre: string | null;
+    email: string | null;
+    telefono: string | null;
+  } | null;
 };
 
-type DocFile = { name: string };
+const ESTADOS = [
+  {
+    key: 'en_estudio',
+    label: 'En estudio',
+    progress: 10,
+    description: 'Hemos recibido la operación y la estamos analizando.',
+  },
+  {
+    key: 'documentacion_pendiente',
+    label: 'Documentación pendiente',
+    progress: 25,
+    description: 'Estamos a la espera de que el cliente envíe toda la documentación.',
+  },
+  {
+    key: 'enviado_al_banco',
+    label: 'Enviado al banco',
+    progress: 40,
+    description: 'La operación está siendo estudiada por el banco.',
+  },
+  {
+    key: 'tasacion',
+    label: 'Tasación',
+    progress: 60,
+    description: 'La vivienda está en fase de tasación.',
+  },
+  {
+    key: 'aprobado',
+    label: 'Aprobado',
+    progress: 80,
+    description: 'La hipoteca ha sido aprobada. Preparando firma.',
+  },
+  {
+    key: 'firma_en_notaria',
+    label: 'Firma en notaría',
+    progress: 95,
+    description: 'Coordinando fecha y documentación para la firma en notaría.',
+  },
+  {
+    key: 'finalizado',
+    label: 'Finalizado',
+    progress: 100,
+    description: 'Operación finalizada y firmada.',
+  },
+  {
+    key: 'rechazado',
+    label: 'Rechazado',
+    progress: 0,
+    description: 'La operación no ha podido ser aprobada.',
+  },
+] as const;
 
-export default function CaseDetailPage() {
-  // id de la URL = id del CLIENTE
-  const { id } = useParams<{ id: string }>();
+function getEstadoInfo(estado: string) {
+  return ESTADOS.find((e) => e.key === estado) ?? ESTADOS[0];
+}
+
+export default function PortalCaseDetailPage() {
+  const params = useParams<{ id: string }>();
   const router = useRouter();
+  const id = params?.id;
 
-  const [cliente, setCliente] = useState<Cliente | null>(null);
-  const [caso, setCaso] = useState<Caso | null>(null);
-  const [docs, setDocs] = useState<DocFile[]>([]);
+  const [caso, setCaso] = useState<CasoDetalle | null>(null);
   const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [ok, setOk] = useState<string | null>(null);
+
+  const [estado, setEstado] = useState<string>('en_estudio');
+  const [progreso, setProgreso] = useState<number>(0);
+  const [notas, setNotas] = useState<string>('');
 
   useEffect(() => {
     if (!id) return;
 
     (async () => {
       setLoading(true);
-      setErrorMsg(null);
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
-        setErrorMsg('Usuario no autenticado');
-        setLoading(false);
+        router.push('/portal/login');
         return;
       }
 
-      // 1) Obtener el cliente del usuario logueado
-      const { data: clienteData, error: clienteError } = await supabase
-        .from<Cliente>('clientes')
-        .select('*')
-        .eq('id', id) // id de la URL = id del cliente
-        .eq('user_id', user.id)
+      const { data, error } = await supabase
+        .from('casos')
+        .select(
+          'id, titulo, estado, progreso, notas, created_at, clientes ( nombre, email, telefono )'
+        )
+        .eq('id', id)
+        .eq('user_id', user.id) // seguridad: solo ves tus casos
         .single();
 
-      if (clienteError || !clienteData) {
-        setErrorMsg('Cliente no encontrado.');
-        setLoading(false);
-        return;
-      }
-
-      setCliente(clienteData);
-
-      // 2) Buscar caso existente de ese cliente o crearlo
-      const { data: casosData, error: casosError } = await supabase
-        .from<Caso>('casos')
-        .select('*')
-        .eq('cliente_id', clienteData.id)
-        .eq('user_id', user.id)
-        .limit(1);
-
-      let casoFinal: Caso | null = null;
-
-      if (casosError) {
-        setErrorMsg(casosError.message);
-        setLoading(false);
-        return;
-      }
-
-      if (!casosData || casosData.length === 0) {
-        const { data: nuevoCaso, error: insertError } = await supabase
-          .from<Caso>('casos')
-          .insert({
-            user_id: user.id,
-            cliente_id: clienteData.id,
-            titulo: `Expediente ${clienteData.nombre}`,
-            estado: 'en_estudio',
-            progreso: 0,
-            notas: 'Expediente creado automáticamente.',
-          })
-          .select('*')
-          .single();
-
-        if (insertError || !nuevoCaso) {
-          setErrorMsg('No se ha podido crear el expediente.');
-          setLoading(false);
-          return;
-        }
-
-        casoFinal = nuevoCaso;
-      } else {
-        casoFinal = casosData[0];
-      }
-
-      setCaso(casoFinal);
-
-      // 3) Listar documentos del bucket docs
-      const path = `${user.id}/${casoFinal.id}`;
-      const { data: files, error: storageError } = await supabase.storage
-        .from('docs')
-        .list(path, { limit: 100 });
-
-      if (!storageError && files) {
-        setDocs(files as unknown as DocFile[]);
+      if (error) {
+        console.error(error);
+        setCaso(null);
+      } else if (data) {
+        setCaso(data);
+        setEstado(data.estado || 'en_estudio');
+        setProgreso(typeof data.progreso === 'number' ? data.progreso : 0);
+        setNotas(data.notas ?? '');
       }
 
       setLoading(false);
     })();
-  }, [id]);
+  }, [id, router]);
 
-  const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file || !caso) return;
+  const handleEstadoChange = (nuevoEstado: string) => {
+    setEstado(nuevoEstado);
+    const info = getEstadoInfo(nuevoEstado);
+    setProgreso(info.progress);
+  };
 
-    setUploading(true);
-    setErrorMsg(null);
+  const handleSave = async () => {
+    if (!caso) return;
+    setSaving(true);
+    setError(null);
+    setOk(null);
 
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      setErrorMsg('Usuario no autenticado');
-      setUploading(false);
+      setSaving(false);
+      setError('Sesión caducada. Vuelve a entrar al portal.');
       return;
     }
 
-    try {
-      const filePath = `${user.id}/${caso.id}/${Date.now()}-${file.name}`;
+    const { error } = await supabase
+      .from('casos')
+      .update({
+        estado,
+        progreso,
+        notas,
+      })
+      .eq('id', caso.id)
+      .eq('user_id', user.id);
 
-      const { error: uploadError } = await supabase.storage
-        .from('docs')
-        .upload(filePath, file);
+    setSaving(false);
 
-      if (uploadError) {
-        setErrorMsg(uploadError.message);
-      } else {
-        const { data: files } = await supabase.storage
-          .from('docs')
-          .list(`${user.id}/${caso.id}`, { limit: 100 });
-
-        if (files) setDocs(files as unknown as DocFile[]);
-      }
-    } finally {
-      setUploading(false);
-      e.target.value = '';
+    if (error) {
+      console.error(error);
+      setError('No se pudieron guardar los cambios. Intenta de nuevo.');
+    } else {
+      setOk('Cambios guardados correctamente.');
+      setCaso((prev) =>
+        prev
+          ? {
+              ...prev,
+              estado,
+              progreso,
+              notas,
+            }
+          : prev
+      );
     }
   };
 
-  // ---------- UI ----------
-
   if (loading) {
-    return <div className="p-6 text-slate-100">Cargando expediente…</div>;
-  }
-
-  if (errorMsg) {
     return (
-      <div className="p-6 text-red-400">
-        {errorMsg}{' '}
-        <button
-          onClick={() => router.push('/portal')}
-          className="ml-2 text-sm underline text-sky-400"
-        >
-          Volver al panel
-        </button>
+      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
+        Cargando expediente…
       </div>
     );
   }
 
-  if (!cliente || !caso) {
+  if (!caso) {
     return (
-      <div className="p-6 text-slate-100">
-        No se ha podido cargar el expediente.
-        <button
-          onClick={() => router.push('/portal')}
-          className="ml-2 text-sm underline text-sky-400"
-        >
-          Volver al panel
-        </button>
+      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
+        <div className="max-w-md text-center space-y-3">
+          <button
+            onClick={() => router.push('/portal')}
+            className="text-xs text-emerald-400 hover:text-emerald-300 underline"
+          >
+            ← Volver al panel de clientes
+          </button>
+          <h1 className="text-xl font-semibold">Expediente no encontrado</h1>
+          <p className="text-sm text-slate-400">
+            Puede que el enlace no sea correcto o que no tengas permisos sobre este expediente.
+          </p>
+        </div>
       </div>
     );
   }
+
+  const estadoInfo = getEstadoInfo(estado);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+    <div className="min-h-screen bg-slate-950 text-slate-50 px-4 py-6">
+      <div className="max-w-5xl mx-auto space-y-6">
         <button
           onClick={() => router.push('/portal')}
-          className="text-sm text-sky-400 hover:text-sky-300 mb-2"
+          className="text-xs text-emerald-400 hover:text-emerald-300 underline"
         >
           ← Volver al panel de clientes
         </button>
 
-        <div className="flex flex-col gap-2">
-          <h1 className="text-3xl font-semibold tracking-tight">
-            Expediente hipotecario
-          </h1>
-          <p className="text-sm text-slate-400">
-            Seguimiento del cliente y gestión de documentación.
+        <header className="space-y-1">
+          <p className="text-xs text-emerald-400 uppercase tracking-wide">
+            Panel interno · BKC Hipotecas
           </p>
-        </div>
+          <h1 className="text-2xl font-semibold">
+            Expediente hipotecario – {caso.clientes?.nombre || 'Cliente'}
+          </h1>
+          <p className="text-xs text-slate-500">
+            Alta: {new Date(caso.created_at).toLocaleDateString('es-ES')}
+          </p>
+        </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Cliente + caso */}
-          <div className="lg:col-span-2 space-y-6">
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-              <h2 className="text-lg font-semibold mb-3">Datos del cliente</h2>
-              <div className="space-y-1 text-sm">
-                <div className="font-medium text-slate-100">
-                  {cliente.nombre}
-                </div>
-                <div className="text-slate-300">{cliente.email}</div>
-                {cliente.telefono && (
-                  <div className="text-slate-300">{cliente.telefono}</div>
-                )}
-                <div className="text-xs text-slate-500 mt-2">
-                  Alta:{' '}
-                  {new Date(cliente.created_at).toLocaleDateString('es-ES')}
-                </div>
+        {(error || ok) && (
+          <div className="space-y-2">
+            {ok && (
+              <div className="text-sm text-emerald-400 bg-emerald-500/10 border border-emerald-500/40 rounded-lg px-3 py-2">
+                {ok}
+              </div>
+            )}
+            {error && (
+              <div className="text-sm text-red-400 bg-red-500/10 border border-red-500/40 rounded-lg px-3 py-2">
+                {error}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="grid gap-4 md:grid-cols-[2fr,1.5fr]">
+          {/* Columna izquierda: datos + control del estado */}
+          <div className="space-y-4">
+            {/* Datos del cliente */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2">
+              <h2 className="text-sm font-semibold text-slate-200">Datos del cliente</h2>
+              <p className="text-lg font-medium">
+                {caso.clientes?.nombre || 'Cliente'}
+              </p>
+              <div className="text-sm text-slate-300">
+                <p>{caso.clientes?.email}</p>
+                {caso.clientes?.telefono && <p>{caso.clientes.telefono}</p>}
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 space-y-4">
+            {/* Control de estado y progreso */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-semibold">{caso.titulo}</h2>
+                  <h2 className="text-sm font-semibold text-slate-200">
+                    Estado del expediente
+                  </h2>
                   <p className="text-xs text-slate-400">
-                    Creado el{' '}
-                    {new Date(caso.created_at).toLocaleDateString('es-ES')}
+                    Selecciona el estado actual de la operación. El progreso se ajusta
+                    automáticamente, pero puedes retocarlo a mano.
                   </p>
                 </div>
-                <span className="inline-flex items-center rounded-full bg-sky-500/10 px-3 py-1 text-xs font-medium text-sky-300 border border-sky-500/30">
-                  Estado: {caso.estado}
-                </span>
               </div>
 
-              <div className="space-y-2">
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>Progreso del expediente</span>
-                  <span>{caso.progreso}%</span>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium text-slate-300">
+                    Estado
+                  </label>
+                  <select
+                    value={estado}
+                    onChange={(e) => handleEstadoChange(e.target.value)}
+                    className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                  >
+                    {ESTADOS.map((e) => (
+                      <option key={e.key} value={e.key}>
+                        {e.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-slate-400 mt-1">{estadoInfo.description}</p>
                 </div>
-                <div className="h-2 w-full rounded-full bg-slate-800 overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-500 transition-all"
-                    style={{
-                      width: `${Math.min(Math.max(caso.progreso, 0), 100)}%`,
-                    }}
+
+                <div className="space-y-1">
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>Progreso del expediente</span>
+                    <span>{progreso}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={progreso}
+                    onChange={(e) => setProgreso(Number(e.target.value))}
+                    className="w-full"
                   />
+                  <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
+                    <div
+                      className="h-full bg-emerald-500 transition-all"
+                      style={{ width: `${progreso}%` }}
+                    />
+                  </div>
                 </div>
               </div>
 
-              <div className="mt-4">
-                <h3 className="text-sm font-medium mb-1">Notas internas</h3>
-                <p className="text-sm text-slate-200 whitespace-pre-wrap bg-slate-950/40 border border-slate-800 rounded-xl p-3">
-                  {caso.notas && caso.notas.trim().length > 0
-                    ? caso.notas
-                    : 'Sin notas por el momento.'}
-                </p>
-              </div>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="inline-flex items-center justify-center rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-sm font-medium px-4 py-2 transition disabled:opacity-60"
+              >
+                {saving ? 'Guardando…' : 'Guardar cambios'}
+              </button>
+            </div>
+
+            {/* Notas internas */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+              <h2 className="text-sm font-semibold text-slate-200">Notas internas</h2>
+              <textarea
+                value={notas}
+                onChange={(e) => setNotas(e.target.value)}
+                rows={5}
+                className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 resize-y"
+                placeholder="Apunta aquí comentarios internos, estado real con el banco, condiciones, etc."
+              />
+              <p className="text-[11px] text-slate-500">
+                Estas notas son solo para uso interno. El cliente verá solo el estado y el progreso.
+              </p>
             </div>
           </div>
 
-          {/* Documentación */}
-          <div className="space-y-6">
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5">
-              <h2 className="text-lg font-semibold mb-3">Documentación</h2>
-              <p className="text-xs text-slate-400 mb-3">
-                Sube aquí DNI, nóminas, IRPF, contrato, etc.
+          {/* Columna derecha: documentación / info cliente */}
+          <div className="space-y-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
+              <h2 className="text-sm font-semibold text-slate-200">Documentación</h2>
+              <p className="text-xs text-slate-400">
+                Próximo paso: conectar aquí la subida de documentación al bucket <code>docs</code> de Supabase.
+                De momento puedes seguir gestionando los documentos por email o WhatsApp.
               </p>
-
-              <label className="block">
-                <span className="text-xs font-medium text-slate-300 mb-1 block">
-                  Subir documento
-                </span>
-                <input
-                  type="file"
-                  onChange={handleUpload}
-                  disabled={uploading}
-                  className="block w-full text-xs text-slate-200
-                             file:mr-3 file:py-1.5 file:px-3
-                             file:rounded-full file:border-0
-                             file:text-xs file:font-medium
-                             file:bg-emerald-500/90 file:text-slate-950
-                             hover:file:bg-emerald-400
-                             cursor-pointer"
-                />
-              </label>
-              {uploading && (
-                <p className="text-xs text-slate-400 mt-2">
-                  Subiendo documento…
-                </p>
-              )}
-
-              <div className="mt-4 border-t border-slate-800 pt-3">
-                <h3 className="text-sm font-medium mb-2">Archivos subidos</h3>
-                {docs.length === 0 ? (
-                  <p className="text-xs text-slate-500">
-                    Aún no hay documentos asociados a este expediente.
-                  </p>
-                ) : (
-                  <ul className="space-y-1 text-xs">
-                    {docs.map((f) => (
-                      <li
-                        key={f.name}
-                        className="flex items-center justify-between gap-2 rounded-lg bg-slate-950/60 px-2 py-1.5"
-                      >
-                        <span className="truncate">{f.name}</span>
-                        <span className="text-[10px] text-slate-500">
-                          (guardado en Supabase)
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              <ul className="text-xs text-slate-400 list-disc pl-4 space-y-1">
+                <li>DNI / NIE de los intervinientes</li>
+                <li>Últimas nóminas o justificantes de ingresos</li>
+                <li>Vida laboral actualizada</li>
+                <li>Contrato de arras / señal, si lo hubiera</li>
+              </ul>
             </div>
 
-            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-400 space-y-2">
-              <p>✅ Cada cliente tiene su expediente único.</p>
-              <p>
-                ✅ Solo tú (usuario autenticado) puedes ver estos datos en el
-                portal interno.
-              </p>
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2">
+              <h2 className="text-sm font-semibold text-slate-200">Privacidad</h2>
+              <ul className="text-xs text-slate-400 space-y-1">
+                <li>✅ Cada cliente tiene su expediente único.</li>
+                <li>✅ Solo tú (usuario autenticado) puedes ver estos datos en el portal interno.</li>
+                <li>✅ El cliente solo ve estado y progreso desde su propio acceso.</li>
+              </ul>
             </div>
           </div>
         </div>
+
+        <p className="text-[11px] text-slate-500">
+          Panel interno BKC Home · Gestión de hipotecas
+        </p>
       </div>
     </div>
   );
