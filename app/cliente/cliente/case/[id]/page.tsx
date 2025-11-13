@@ -4,19 +4,30 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-type CasoDetalle = {
+type Cliente = {
   id: string;
+  user_id: string;
+  nombre: string;
+  email: string;
+  telefono: string | null;
+  created_at: string;
+};
+
+type Caso = {
+  id: string;
+  user_id: string;
+  cliente_id: string;
   titulo: string;
   estado: string;
   progreso: number;
   notas: string | null;
   created_at: string;
-  cliente_id: string | null;
-  cliente?: {
-    nombre: string | null;
-    email: string | null;
-    telefono: string | null;
-  } | null;
+  updated_at: string;
+};
+
+type CasoDetalle = {
+  cliente: Cliente;
+  caso: Caso;
 };
 
 const ESTADOS = [
@@ -77,26 +88,26 @@ function getEstadoInfo(estado: string) {
 export default function PortalCaseDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const id = params?.id;
+  const clienteId = params?.id; // ⚠️ aquí tratamos id como CLIENTE, no como CASO
 
-  const [caso, setCaso] = useState<CasoDetalle | null>(null);
+  const [data, setData] = useState<CasoDetalle | null>(null);
+  const [estado, setEstado] = useState<string>('en_estudio');
+  const [progreso, setProgreso] = useState<number>(0);
+  const [notas, setNotas] = useState<string>('');
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
-  const [estado, setEstado] = useState<string>('en_estudio');
-  const [progreso, setProgreso] = useState<number>(0);
-  const [notas, setNotas] = useState<string>('');
-
   useEffect(() => {
-    if (!id) return;
+    if (!clienteId) return;
 
     (async () => {
       setLoading(true);
       setError(null);
 
-      // 1️⃣ Aseguramos usuario logueado
+      // 1️⃣ Usuario logueado
       const { data: authData } = await supabase.auth.getUser();
       const user = authData?.user;
       if (!user) {
@@ -105,63 +116,79 @@ export default function PortalCaseDetailPage() {
         return;
       }
 
-      // 2️⃣ Traemos el caso (SIN joins raros)
-      const { data: casoData, error: casoError } = await supabase
-        .from('casos')
-        .select('id, titulo, estado, progreso, notas, created_at, cliente_id, user_id')
-        .eq('id', id)
+      // 2️⃣ Traemos el cliente
+      const { data: cliente, error: cliError } = await supabase
+        .from('clientes')
+        .select('*')
+        .eq('id', clienteId)
         .eq('user_id', user.id)
-        .single();
+        .single<Cliente>();
 
-      if (casoError || !casoData) {
-        console.error('Error cargando caso:', casoError);
-        setError('No se ha podido cargar el expediente (puede que no exista o no sea tuyo).');
-        setCaso(null);
+      if (cliError || !cliente) {
+        console.error('Error cargando cliente:', cliError);
+        setError('No se ha encontrado el cliente asociado a este expediente.');
         setLoading(false);
         return;
       }
 
-      // 3️⃣ Traemos el cliente asociado (si existe)
-      let clienteInfo: CasoDetalle['cliente'] = null;
-      if (casoData.cliente_id) {
-        const { data: clienteData, error: clienteError } = await supabase
-          .from('clientes')
-          .select('nombre, email, telefono, user_id')
-          .eq('id', casoData.cliente_id)
-          .eq('user_id', user.id)
-          .maybeSingle();
+      // 3️⃣ Buscamos el caso de este cliente
+      let caso: Caso | null = null;
 
-        if (clienteError) {
-          console.warn('Error cargando cliente del caso:', clienteError);
-        } else {
-          clienteInfo = clienteData
-            ? {
-                nombre: clienteData.nombre,
-                email: clienteData.email,
-                telefono: clienteData.telefono,
-              }
-            : null;
-        }
+      const { data: casoExistente, error: casoError } = await supabase
+        .from('casos')
+        .select('*')
+        .eq('cliente_id', cliente.id)
+        .eq('user_id', user.id)
+        .maybeSingle<Caso>();
+
+      if (casoError) {
+        console.error('Error buscando caso:', casoError);
       }
 
-      const combinado: CasoDetalle = {
-        id: casoData.id,
-        titulo: casoData.titulo,
-        estado: casoData.estado ?? 'en_estudio',
-        progreso: typeof casoData.progreso === 'number' ? casoData.progreso : 0,
-        notas: casoData.notas ?? '',
-        created_at: casoData.created_at,
-        cliente_id: casoData.cliente_id ?? null,
-        cliente: clienteInfo,
+      if (casoExistente) {
+        caso = casoExistente;
+      } else {
+        // 4️⃣ Si no hay caso, lo creamos automáticamente
+        const { data: nuevoCaso, error: insertError } = await supabase
+          .from('casos')
+          .insert({
+            user_id: user.id,
+            cliente_id: cliente.id,
+            titulo: `Expediente de ${cliente.nombre}`,
+            estado: 'en_estudio',
+            progreso: 10,
+            notas: '',
+          })
+          .select('*')
+          .single<Caso>();
+
+        if (insertError || !nuevoCaso) {
+          console.error('Error creando caso:', insertError);
+          setError('No se ha podido crear el expediente para este cliente.');
+          setLoading(false);
+          return;
+        }
+
+        caso = nuevoCaso;
+      }
+
+      const detalle: CasoDetalle = {
+        cliente,
+        caso: {
+          ...caso,
+          estado: caso.estado ?? 'en_estudio',
+          progreso: typeof caso.progreso === 'number' ? caso.progreso : 0,
+          notas: caso.notas ?? '',
+        },
       };
 
-      setCaso(combinado);
-      setEstado(combinado.estado);
-      setProgreso(combinado.progreso);
-      setNotas(combinado.notas ?? '');
+      setData(detalle);
+      setEstado(detalle.caso.estado);
+      setProgreso(detalle.caso.progreso);
+      setNotas(detalle.caso.notas ?? '');
       setLoading(false);
     })();
-  }, [id, router]);
+  }, [clienteId, router]);
 
   const handleEstadoChange = (nuevoEstado: string) => {
     setEstado(nuevoEstado);
@@ -170,7 +197,7 @@ export default function PortalCaseDetailPage() {
   };
 
   const handleSave = async () => {
-    if (!caso) return;
+    if (!data) return;
     setSaving(true);
     setError(null);
     setOk(null);
@@ -190,7 +217,7 @@ export default function PortalCaseDetailPage() {
         progreso,
         notas,
       })
-      .eq('id', caso.id)
+      .eq('id', data.caso.id)
       .eq('user_id', user.id);
 
     setSaving(false);
@@ -200,20 +227,23 @@ export default function PortalCaseDetailPage() {
       setError('No se pudieron guardar los cambios. Intenta de nuevo.');
     } else {
       setOk('Cambios guardados correctamente.');
-      setCaso((prev) =>
+      setData((prev) =>
         prev
           ? {
               ...prev,
-              estado,
-              progreso,
-              notas,
+              caso: {
+                ...prev.caso,
+                estado,
+                progreso,
+                notas,
+              },
             }
           : prev
       );
     }
   };
 
-  // 🔄 Estados de carga / error
+  // 🌀 estados de carga / error
 
   if (loading) {
     return (
@@ -223,7 +253,7 @@ export default function PortalCaseDetailPage() {
     );
   }
 
-  if (!caso) {
+  if (!data) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
         <div className="max-w-md text-center space-y-3">
@@ -235,7 +265,7 @@ export default function PortalCaseDetailPage() {
           </button>
           <h1 className="text-xl font-semibold">Expediente no encontrado</h1>
           <p className="text-sm text-slate-400">
-            Puede que el enlace no sea correcto o que no tengas permisos sobre este expediente.
+            Puede que el enlace no sea correcto o que no tengas permisos sobre este cliente.
           </p>
           {error && (
             <p className="text-xs text-red-400 mt-2">
@@ -247,9 +277,10 @@ export default function PortalCaseDetailPage() {
     );
   }
 
+  const { cliente, caso } = data;
   const estadoInfo = getEstadoInfo(estado);
 
-  // ✅ UI principal (la misma que ya tenías, usando caso.cliente)
+  // ✅ UI
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 px-4 py-6">
@@ -266,10 +297,10 @@ export default function PortalCaseDetailPage() {
             Panel interno · BKC Hipotecas
           </p>
           <h1 className="text-2xl font-semibold">
-            Expediente hipotecario – {caso.cliente?.nombre || 'Cliente'}
+            Expediente hipotecario – {cliente.nombre}
           </h1>
           <p className="text-xs text-slate-500">
-            Alta: {new Date(caso.created_at).toLocaleDateString('es-ES')}
+            Cliente creado el {new Date(cliente.created_at).toLocaleDateString('es-ES')}
           </p>
         </header>
 
@@ -289,21 +320,21 @@ export default function PortalCaseDetailPage() {
         )}
 
         <div className="grid gap-4 md:grid-cols-[2fr,1.5fr]">
-          {/* Columna izquierda: datos + control del estado */}
+          {/* Izquierda: datos + estado */}
           <div className="space-y-4">
-            {/* Datos del cliente */}
+            {/* Datos cliente */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2">
               <h2 className="text-sm font-semibold text-slate-200">Datos del cliente</h2>
               <p className="text-lg font-medium">
-                {caso.cliente?.nombre || 'Cliente'}
+                {cliente.nombre}
               </p>
               <div className="text-sm text-slate-300">
-                <p>{caso.cliente?.email}</p>
-                {caso.cliente?.telefono && <p>{caso.cliente.telefono}</p>}
+                <p>{cliente.email}</p>
+                {cliente.telefono && <p>{cliente.telefono}</p>}
               </div>
             </div>
 
-            {/* Control de estado y progreso */}
+            {/* Estado expediente */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -383,7 +414,7 @@ export default function PortalCaseDetailPage() {
             </div>
           </div>
 
-          {/* Columna derecha: documentación / info cliente */}
+          {/* Derecha: documentación / info */}
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
               <h2 className="text-sm font-semibold text-slate-200">Documentación</h2>
@@ -402,9 +433,9 @@ export default function PortalCaseDetailPage() {
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2">
               <h2 className="text-sm font-semibold text-slate-200">Privacidad</h2>
               <ul className="text-xs text-slate-400 space-y-1">
-                <li>✅ Cada cliente tiene su expediente único.</li>
-                <li>✅ Solo tú (usuario autenticado) puedes ver estos datos en el portal interno.</li>
-                <li>✅ El cliente solo ve estado y progreso desde su propio acceso.</li>
+                <li>✅ Cada cliente tiene su expediente único (1 cliente → 1 expediente por defecto).</li>
+                <li>✅ Solo tú, como usuario autenticado, ves estos datos en el panel interno.</li>
+                <li>✅ El cliente solo verá la parte pública cuando hagamos su portal.</li>
               </ul>
             </div>
           </div>
@@ -417,4 +448,3 @@ export default function PortalCaseDetailPage() {
     </div>
   );
 }
-
