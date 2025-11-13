@@ -286,6 +286,9 @@ export default function CaseDetailPage() {
     );
   }
 
+  // 🔗 Enlace de seguimiento PÚBLICO para el cliente
+  const trackingUrl = `https://backhipotecas.vercel.app/seguimiento/${caso.id}`;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
       {/* Barra superior */}
@@ -477,6 +480,20 @@ export default function CaseDetailPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </section>
+
+        {/* 🔥 Bloque: Enlace de seguimiento para el cliente */}
+        <section className="rounded-lg border border-emerald-700 bg-emerald-950/40 p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-emerald-200">
+            Enlace de seguimiento para el cliente
+          </h2>
+          <p className="text-xs text-emerald-200/80">
+            Copia este enlace y envíaselo al cliente. Desde ahí podrá consultar
+            el estado del expediente sin necesidad de usuario ni contraseña.
+          </p>
+          <div className="bg-slate-950 border border-emerald-700/70 rounded-md px-3 py-2 text-xs break-all text-emerald-100">
+            {trackingUrl}
           </div>
         </section>
       </main>
