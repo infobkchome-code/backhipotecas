@@ -18,6 +18,54 @@ type CasoDetalle = {
   } | null;
 };
 
+const ESTADOS = [
+  {
+    key: 'en_estudio',
+    label: 'En estudio',
+    description: 'Estamos analizando tu operación y viabilidad.',
+  },
+  {
+    key: 'documentacion_pendiente',
+    label: 'Documentación pendiente',
+    description: 'Faltan uno o varios documentos por entregar.',
+  },
+  {
+    key: 'enviado_al_banco',
+    label: 'Enviado al banco',
+    description: 'Tu operación está siendo estudiada por la entidad bancaria.',
+  },
+  {
+    key: 'tasacion',
+    label: 'Tasación',
+    description: 'La vivienda está en proceso de tasación.',
+  },
+  {
+    key: 'aprobado',
+    label: 'Aprobado',
+    description: 'La hipoteca ha sido aprobada. Estamos preparando la firma.',
+  },
+  {
+    key: 'firma_en_notaria',
+    label: 'Firma en notaría',
+    description: 'Coordinando fecha y documentación para la firma.',
+  },
+  {
+    key: 'finalizado',
+    label: 'Finalizado',
+    description: 'Operación finalizada con éxito.',
+  },
+  {
+    key: 'rechazado',
+    label: 'Rechazado',
+    description: 'La operación no ha podido ser aprobada.',
+  },
+] as const;
+
+function getEstadoIndex(estado: string) {
+  const idx = ESTADOS.findIndex((e) => e.key === estado);
+  return idx === -1 ? 0 : idx;
+}
+
 export default function ClienteCaseDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -57,7 +105,7 @@ export default function ClienteCaseDetailPage() {
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
-        Cargando…
+        Cargando tu expediente…
       </div>
     );
   }
@@ -74,12 +122,14 @@ export default function ClienteCaseDetailPage() {
           </button>
           <h1 className="text-xl font-semibold">Expediente no encontrado</h1>
           <p className="text-sm text-slate-400">
-            Puede que el enlace haya caducado o que no tengas permisos para este expediente.
+            Asegúrate de entrar desde el enlace más reciente que te hemos enviado.
           </p>
         </div>
       </div>
     );
   }
+
+  const currentIndex = getEstadoIndex(caso.estado);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50 px-4 py-6">
@@ -94,7 +144,7 @@ export default function ClienteCaseDetailPage() {
         <h1 className="text-2xl font-semibold">Expediente hipotecario</h1>
 
         <div className="grid gap-4 md:grid-cols-[2fr,1.5fr]">
-          {/* Datos del cliente */}
+          {/* Lado izquierdo */}
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2">
               <h2 className="text-sm font-semibold text-slate-200">Datos del cliente</h2>
@@ -110,59 +160,91 @@ export default function ClienteCaseDetailPage() {
               </p>
             </div>
 
-            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
-              <h2 className="text-sm font-semibold text-slate-200">
-                Estado del expediente
-              </h2>
-              <p className="text-sm text-slate-300">
-                Estado:{' '}
-                <span className="font-medium text-emerald-400">
-                  {caso.estado.replace('_', ' ')}
+            {/* Timeline de estados */}
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-semibold text-slate-200">
+                    Estado de tu hipoteca
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    Te mostramos en qué punto exacto está tu operación.
+                  </p>
+                </div>
+                <span className="text-xs px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-300 border border-emerald-500/40">
+                  {caso.progreso}% completado
                 </span>
-              </p>
-              <div className="space-y-1">
-                <div className="flex justify-between text-xs text-slate-400">
-                  <span>Progreso</span>
-                  <span>{caso.progreso}%</span>
-                </div>
-                <div className="h-2 rounded-full bg-slate-800 overflow-hidden">
-                  <div
-                    className="h-full bg-emerald-500"
-                    style={{ width: `${caso.progreso}%` }}
-                  />
-                </div>
               </div>
-              <p className="text-xs text-slate-500">
-                Tu asesor actualizará aquí cada avance importante (envío al banco, tasación,
-                aprobación, notaría…).
+
+              <ol className="space-y-3">
+                {ESTADOS.map((step, index) => {
+                  const done = index < currentIndex;
+                  const current = index === currentIndex;
+                  return (
+                    <li key={step.key} className="flex gap-3 items-start">
+                      <div
+                        className={[
+                          'mt-1 h-5 w-5 rounded-full flex items-center justify-center text-[10px] border',
+                          done
+                            ? 'bg-emerald-500 text-slate-950 border-emerald-500'
+                            : current
+                            ? 'bg-slate-900 text-emerald-400 border-emerald-500'
+                            : 'bg-slate-950 text-slate-500 border-slate-600',
+                        ].join(' ')}
+                      >
+                        {done ? '✓' : index + 1}
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium">
+                          {step.label}
+                          {current && (
+                            <span className="ml-2 text-[11px] text-emerald-400">
+                              (estado actual)
+                            </span>
+                          )}
+                        </p>
+                        <p className="text-xs text-slate-400">{step.description}</p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2">
+              <h2 className="text-sm font-semibold text-slate-200">Notas importantes</h2>
+              <p className="text-sm text-slate-300">
+                Tu asesor actualiza el estado cuando hay un avance relevante (envío al banco,
+                tasación, aprobación, firma…). Si tienes dudas, puedes escribirle directamente.
               </p>
             </div>
           </div>
 
-          {/* Documentación (de momento solo informativo) */}
+          {/* Lado derecho */}
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
               <h2 className="text-sm font-semibold text-slate-200">Documentación</h2>
               <p className="text-xs text-slate-400">
-                Aquí verás la documentación necesaria y el estado de recepción. En la siguiente
-                fase conectaremos esta sección para que puedas subir los archivos directamente.
+                En la siguiente fase podrás ver aquí qué documentos están pendientes y cuáles ya
+                hemos recibido. De momento te avisaremos por email o WhatsApp de cualquier falta.
               </p>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
-              <h2 className="text-sm font-semibold text-slate-200">Notas del expediente</h2>
+              <h2 className="text-sm font-semibold text-slate-200">Resumen interno</h2>
               <p className="text-sm text-slate-300 whitespace-pre-wrap">
-                {caso.notas || 'Sin notas visibles por el momento.'}
+                {caso.notas
+                  ? 'Parte de la información de tu expediente puede estar resumida aquí por tu asesor.'
+                  : 'Tu expediente está en marcha. Si necesitas un resumen personalizado, pídeselo a tu asesor.'}
               </p>
             </div>
           </div>
         </div>
 
         <p className="text-[11px] text-slate-500">
-          Panel exclusivo de cliente · BKC Home Hipotecas
+          Panel del cliente BKC Home · Seguimiento de hipoteca
         </p>
       </div>
     </div>
   );
 }
-
