@@ -17,9 +17,11 @@ type Caso = {
 
 const ESTADOS = [
   { value: 'en_estudio', label: 'En estudio' },
-  { value: 'preaprobado', label: 'Preaprobado' },
-  { value: 'aprobado', label: 'Aprobado banco' },
-  { value: 'firmado', label: 'Firma realizada' },
+  { value: 'tasacion', label: 'Tasación' },
+  { value: 'fein', label: 'FEIN / Oferta' },
+  { value: 'notaria', label: 'Notaría' },
+  { value: 'compraventa', label: 'Firma compraventa' },
+  { value: 'fin', label: 'Expediente finalizado' },
   { value: 'denegado', label: 'Denegado' },
 ];
 
