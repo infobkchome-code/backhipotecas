@@ -4,69 +4,41 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-type CasoDetalle = {
+type Cliente = {
   id: string;
+  user_id: string;
+  nombre: string;
+  email: string;
+  telefono: string | null;
+  created_at: string;
+};
+
+type Caso = {
+  id: string;
+  user_id: string;
+  cliente_id: string;
   titulo: string;
   estado: string;
   progreso: number;
   notas: string | null;
   created_at: string;
-  clientes?: {
-    nombre: string | null;
-    email: string | null;
-    telefono: string | null;
-  } | null;
+  updated_at: string;
+};
+
+type CasoDetalle = {
+  cliente: Cliente;
+  caso: Caso;
 };
 
 const ESTADOS = [
-  {
-    key: 'en_estudio',
-    label: 'En estudio',
-    progress: 10,
-    description: 'Hemos recibido la operación y la estamos analizando.',
-  },
-  {
-    key: 'documentacion_pendiente',
-    label: 'Documentación pendiente',
-    progress: 25,
-    description: 'Estamos a la espera de que el cliente envíe toda la documentación.',
-  },
-  {
-    key: 'enviado_al_banco',
-    label: 'Enviado al banco',
-    progress: 40,
-    description: 'La operación está siendo estudiada por el banco.',
-  },
-  {
-    key: 'tasacion',
-    label: 'Tasación',
-    progress: 60,
-    description: 'La vivienda está en fase de tasación.',
-  },
-  {
-    key: 'aprobado',
-    label: 'Aprobado',
-    progress: 80,
-    description: 'La hipoteca ha sido aprobada. Preparando firma.',
-  },
-  {
-    key: 'firma_en_notaria',
-    label: 'Firma en notaría',
-    progress: 95,
-    description: 'Coordinando fecha y documentación para la firma en notaría.',
-  },
-  {
-    key: 'finalizado',
-    label: 'Finalizado',
-    progress: 100,
-    description: 'Operación finalizada y firmada.',
-  },
-  {
-    key: 'rechazado',
-    label: 'Rechazado',
-    progress: 0,
-    description: 'La operación no ha podido ser aprobada.',
-  },
+  { key: 'en_estudio', label: 'En estudio', progress: 10, description: 'Hemos recibido la operación y la estamos analizando.' },
+  { key: 'documentacion_pendiente', label: 'Documentación pendiente', progress: 25, description: 'Estamos a la espera de documentación del cliente.' },
+  { key: 'enviado_al_banco', label: 'Enviado al banco', progress: 40, description: 'El banco está estudiando la operación.' },
+  { key: 'tasacion', label: 'Tasación', progress: 60, description: 'La vivienda está en fase de tasación.' },
+  { key: 'aprobado', label: 'Aprobado', progress: 80, description: 'La hipoteca está aprobada. Preparando firma.' },
+  { key: 'firma_en_notaria', label: 'Firma en notaría', progress: 95, description: 'Coordinando fecha y documentación para la firma.' },
+  { key: 'finalizado', label: 'Finalizado', progress: 100, description: 'Operación finalizada y firmada.' },
+  { key: 'rechazado', label: 'Rechazado', progress: 0, description: 'La operación no ha podido ser aprobada.' },
 ] as const;
 
 function getEstadoInfo(estado: string) {
@@ -76,51 +48,107 @@ function getEstadoInfo(estado: string) {
 export default function PortalCaseDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const id = params?.id;
+  const clienteId = params?.id; // ⚠️ tratamos el id de la URL como CLIENTE
 
-  const [caso, setCaso] = useState<CasoDetalle | null>(null);
+  const [data, setData] = useState<CasoDetalle | null>(null);
+  const [estado, setEstado] = useState<string>('en_estudio');
+  const [progreso, setProgreso] = useState<number>(0);
+  const [notas, setNotas] = useState<string>('');
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
-  const [estado, setEstado] = useState<string>('en_estudio');
-  const [progreso, setProgreso] = useState<number>(0);
-  const [notas, setNotas] = useState<string>('');
-
   useEffect(() => {
-    if (!id) return;
+    if (!clienteId) return;
 
     (async () => {
       setLoading(true);
-      const { data: { user } } = await supabase.auth.getUser();
+      setError(null);
+
+      // 1) Usuario logueado
+      const { data: authData } = await supabase.auth.getUser();
+      const user = authData?.user;
       if (!user) {
+        setLoading(false);
         router.push('/portal/login');
         return;
       }
 
-      const { data, error } = await supabase
-        .from('casos')
-        .select(
-          'id, titulo, estado, progreso, notas, created_at, clientes ( nombre, email, telefono )'
-        )
-        .eq('id', id)
-        .eq('user_id', user.id) // seguridad: solo ves tus casos
-        .single();
+      // 2) Buscar cliente
+      const { data: cliente, error: cliError } = await supabase
+        .from('clientes')
+        .select('*')
+        .eq('id', clienteId)
+        .single<Cliente>();
 
-      if (error) {
-        console.error(error);
-        setCaso(null);
-      } else if (data) {
-        setCaso(data);
-        setEstado(data.estado || 'en_estudio');
-        setProgreso(typeof data.progreso === 'number' ? data.progreso : 0);
-        setNotas(data.notas ?? '');
+      if (cliError || !cliente) {
+        console.error('Error cliente:', cliError);
+        setError('No se ha encontrado el cliente asociado a este expediente.');
+        setLoading(false);
+        return;
       }
 
+      // 3) Buscar caso existente para este cliente
+      let caso: Caso | null = null;
+
+      const { data: casoExistente, error: casoError } = await supabase
+        .from('casos')
+        .select('*')
+        .eq('cliente_id', cliente.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle<Caso>();
+
+      if (casoError) {
+        console.error('Error buscando caso:', casoError);
+      }
+
+      if (casoExistente) {
+        caso = casoExistente;
+      } else {
+        // 4) Crear caso si no existe
+        const { data: nuevoCaso, error: insertError } = await supabase
+          .from('casos')
+          .insert({
+            user_id: user.id,
+            cliente_id: cliente.id,
+            titulo: `Expediente de ${cliente.nombre}`,
+            estado: 'en_estudio',
+            progreso: 10,
+            notas: '',
+          })
+          .select('*')
+          .single<Caso>();
+
+        if (insertError || !nuevoCaso) {
+          console.error('Error creando caso:', insertError);
+          setError('No se ha podido crear el expediente para este cliente.');
+          setLoading(false);
+          return;
+        }
+
+        caso = nuevoCaso;
+      }
+
+      const detalle: CasoDetalle = {
+        cliente,
+        caso: {
+          ...caso,
+          estado: caso.estado ?? 'en_estudio',
+          progreso: typeof caso.progreso === 'number' ? caso.progreso : 0,
+          notas: caso.notas ?? '',
+        },
+      };
+
+      setData(detalle);
+      setEstado(detalle.caso.estado);
+      setProgreso(detalle.caso.progreso);
+      setNotas(detalle.caso.notas ?? '');
       setLoading(false);
     })();
-  }, [id, router]);
+  }, [clienteId, router]);
 
   const handleEstadoChange = (nuevoEstado: string) => {
     setEstado(nuevoEstado);
@@ -129,42 +157,45 @@ export default function PortalCaseDetailPage() {
   };
 
   const handleSave = async () => {
-    if (!caso) return;
+    if (!data) return;
     setSaving(true);
     setError(null);
     setOk(null);
 
-    const { data: { user } } = await supabase.auth.getUser();
+    const { data: authData } = await supabase.auth.getUser();
+    const user = authData?.user;
     if (!user) {
       setSaving(false);
       setError('Sesión caducada. Vuelve a entrar al portal.');
       return;
     }
 
-    const { error } = await supabase
+    const { error: updateError } = await supabase
       .from('casos')
       .update({
         estado,
         progreso,
         notas,
       })
-      .eq('id', caso.id)
-      .eq('user_id', user.id);
+      .eq('id', data.caso.id);
 
     setSaving(false);
 
-    if (error) {
-      console.error(error);
+    if (updateError) {
+      console.error(updateError);
       setError('No se pudieron guardar los cambios. Intenta de nuevo.');
     } else {
       setOk('Cambios guardados correctamente.');
-      setCaso((prev) =>
+      setData((prev) =>
         prev
           ? {
               ...prev,
-              estado,
-              progreso,
-              notas,
+              caso: {
+                ...prev.caso,
+                estado,
+                progreso,
+                notas,
+              },
             }
           : prev
       );
@@ -179,7 +210,7 @@ export default function PortalCaseDetailPage() {
     );
   }
 
-  if (!caso) {
+  if (!data) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
         <div className="max-w-md text-center space-y-3">
@@ -191,13 +222,19 @@ export default function PortalCaseDetailPage() {
           </button>
           <h1 className="text-xl font-semibold">Expediente no encontrado</h1>
           <p className="text-sm text-slate-400">
-            Puede que el enlace no sea correcto o que no tengas permisos sobre este expediente.
+            Puede que el enlace no sea correcto o que falten datos en el expediente.
           </p>
+          {error && (
+            <p className="text-xs text-red-400 mt-2">
+              Detalle técnico: {error}
+            </p>
+          )}
         </div>
       </div>
     );
   }
 
+  const { cliente, caso } = data;
   const estadoInfo = getEstadoInfo(estado);
 
   return (
@@ -215,10 +252,10 @@ export default function PortalCaseDetailPage() {
             Panel interno · BKC Hipotecas
           </p>
           <h1 className="text-2xl font-semibold">
-            Expediente hipotecario – {caso.clientes?.nombre || 'Cliente'}
+            Expediente hipotecario – {cliente.nombre}
           </h1>
           <p className="text-xs text-slate-500">
-            Alta: {new Date(caso.created_at).toLocaleDateString('es-ES')}
+            Cliente creado el {new Date(cliente.created_at).toLocaleDateString('es-ES')}
           </p>
         </header>
 
@@ -238,21 +275,19 @@ export default function PortalCaseDetailPage() {
         )}
 
         <div className="grid gap-4 md:grid-cols-[2fr,1.5fr]">
-          {/* Columna izquierda: datos + control del estado */}
+          {/* Izquierda */}
           <div className="space-y-4">
-            {/* Datos del cliente */}
+            {/* Datos cliente */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2">
               <h2 className="text-sm font-semibold text-slate-200">Datos del cliente</h2>
-              <p className="text-lg font-medium">
-                {caso.clientes?.nombre || 'Cliente'}
-              </p>
+              <p className="text-lg font-medium">{cliente.nombre}</p>
               <div className="text-sm text-slate-300">
-                <p>{caso.clientes?.email}</p>
-                {caso.clientes?.telefono && <p>{caso.clientes.telefono}</p>}
+                <p>{cliente.email}</p>
+                {cliente.telefono && <p>{cliente.telefono}</p>}
               </div>
             </div>
 
-            {/* Control de estado y progreso */}
+            {/* Estado expediente */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4">
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -260,17 +295,14 @@ export default function PortalCaseDetailPage() {
                     Estado del expediente
                   </h2>
                   <p className="text-xs text-slate-400">
-                    Selecciona el estado actual de la operación. El progreso se ajusta
-                    automáticamente, pero puedes retocarlo a mano.
+                    Selecciona el estado actual de la operación. El progreso se ajusta solo.
                   </p>
                 </div>
               </div>
 
               <div className="space-y-3">
                 <div className="space-y-1">
-                  <label className="text-xs font-medium text-slate-300">
-                    Estado
-                  </label>
+                  <label className="text-xs font-medium text-slate-300">Estado</label>
                   <select
                     value={estado}
                     onChange={(e) => handleEstadoChange(e.target.value)}
@@ -316,7 +348,7 @@ export default function PortalCaseDetailPage() {
               </button>
             </div>
 
-            {/* Notas internas */}
+            {/* Notas */}
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
               <h2 className="text-sm font-semibold text-slate-200">Notas internas</h2>
               <textarea
@@ -327,33 +359,32 @@ export default function PortalCaseDetailPage() {
                 placeholder="Apunta aquí comentarios internos, estado real con el banco, condiciones, etc."
               />
               <p className="text-[11px] text-slate-500">
-                Estas notas son solo para uso interno. El cliente verá solo el estado y el progreso.
+                Estas notas son solo para uso interno.
               </p>
             </div>
           </div>
 
-          {/* Columna derecha: documentación / info cliente */}
+          {/* Derecha */}
           <div className="space-y-4">
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
               <h2 className="text-sm font-semibold text-slate-200">Documentación</h2>
               <p className="text-xs text-slate-400">
                 Próximo paso: conectar aquí la subida de documentación al bucket <code>docs</code> de Supabase.
-                De momento puedes seguir gestionando los documentos por email o WhatsApp.
               </p>
               <ul className="text-xs text-slate-400 list-disc pl-4 space-y-1">
-                <li>DNI / NIE de los intervinientes</li>
-                <li>Últimas nóminas o justificantes de ingresos</li>
-                <li>Vida laboral actualizada</li>
-                <li>Contrato de arras / señal, si lo hubiera</li>
+                <li>DNI / NIE</li>
+                <li>Nóminas / justificantes de ingresos</li>
+                <li>Vida laboral</li>
+                <li>Contrato de arras (si lo hay)</li>
               </ul>
             </div>
 
             <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-2">
               <h2 className="text-sm font-semibold text-slate-200">Privacidad</h2>
               <ul className="text-xs text-slate-400 space-y-1">
-                <li>✅ Cada cliente tiene su expediente único.</li>
-                <li>✅ Solo tú (usuario autenticado) puedes ver estos datos en el portal interno.</li>
-                <li>✅ El cliente solo ve estado y progreso desde su propio acceso.</li>
+                <li>✅ Cada cliente → un expediente (mínimo).</li>
+                <li>✅ Solo tú ves este panel interno.</li>
+                <li>✅ Más adelante montamos el portal de cliente externo.</li>
               </ul>
             </div>
           </div>
