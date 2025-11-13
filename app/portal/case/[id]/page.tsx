@@ -28,7 +28,7 @@ type Caso = {
 type DocFile = { name: string };
 
 export default function CaseDetailPage() {
-  // ⚠️ Este id es el ID DEL CLIENTE
+  // id de la URL = id del CLIENTE
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
 
@@ -56,11 +56,11 @@ export default function CaseDetailPage() {
         return;
       }
 
-      // 1) Cargar cliente
+      // 1) Obtener el cliente del usuario logueado
       const { data: clienteData, error: clienteError } = await supabase
         .from<Cliente>('clientes')
         .select('*')
-        .eq('id', id)          // id de la URL = id del cliente
+        .eq('id', id) // id de la URL = id del cliente
         .eq('user_id', user.id)
         .single();
 
@@ -72,7 +72,7 @@ export default function CaseDetailPage() {
 
       setCliente(clienteData);
 
-      // 2) Buscar caso de ese cliente, o crearlo si no existe
+      // 2) Buscar caso existente de ese cliente o crearlo
       const { data: casosData, error: casosError } = await supabase
         .from<Caso>('casos')
         .select('*')
@@ -89,7 +89,6 @@ export default function CaseDetailPage() {
       }
 
       if (!casosData || casosData.length === 0) {
-        // No hay caso todavía → creamos uno por defecto
         const { data: nuevoCaso, error: insertError } = await supabase
           .from<Caso>('casos')
           .insert({
@@ -130,7 +129,6 @@ export default function CaseDetailPage() {
     })();
   }, [id]);
 
-  // Subida de documentos
   const handleUpload = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !caso) return;
@@ -170,7 +168,7 @@ export default function CaseDetailPage() {
     }
   };
 
-  // -------- UI --------
+  // ---------- UI ----------
 
   if (loading) {
     return <div className="p-6 text-slate-100">Cargando expediente…</div>;
