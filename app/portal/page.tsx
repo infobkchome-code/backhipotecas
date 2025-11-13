@@ -19,16 +19,20 @@ export default function PortalHome() {
 
   useEffect(() => {
     const fetchClientes = async () => {
-      const { data, error } = await supabase
+      const {
+        data,
+        error: fetchError,
+      } = await supabase
         .from("clientes")
         .select("id, nombre, email, telefono, created_at")
         .order("created_at", { ascending: false });
 
-      if (error) {
-        setError(error.message);
+      if (fetchError) {
+        setError(fetchError.message);
       } else {
         setClientes(data || []);
       }
+
       setLoading(false);
     };
 
@@ -38,37 +42,36 @@ export default function PortalHome() {
   return (
     <main className="min-h-screen bg-slate-950 text-slate-50">
       <div className="max-w-5xl mx-auto px-4 py-10 space-y-8">
-        {/* Cabecera */}
-        <header className="flex items-center justify-between gap-4">
+        {/* CABECERA */}
+        <header className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-semibold">Panel BKC · Clientes</h1>
             <p className="text-sm text-slate-400">
-              Aquí verás los clientes y podrás entrar al expediente de cada uno.
+              Gestiona tus clientes y entra en cada expediente.
             </p>
           </div>
 
           <Link
-            href="/portal/register" 
+            href="/portal/register"
             className="rounded-xl bg-emerald-500 hover:bg-emerald-400 px-4 py-2 text-sm font-medium text-slate-950"
           >
             + Nuevo cliente
           </Link>
-          {/* Si tu formulario está en otra ruta, cambia /portal/register por la que uses */}
         </header>
 
-        {/* Errores */}
+        {/* ERROR */}
         {error && (
           <div className="rounded-lg border border-red-500/40 bg-red-500/10 px-4 py-3 text-sm text-red-100">
             Error cargando clientes: {error}
           </div>
         )}
 
-        {/* Contenido */}
+        {/* LISTADO */}
         {loading ? (
           <div className="text-sm text-slate-400">Cargando clientes...</div>
         ) : clientes.length === 0 ? (
           <div className="text-sm text-slate-400">
-            Aún no hay clientes. Crea el primero con el botón “Nuevo cliente”.
+            Aún no tienes clientes. Agrega uno con el botón “Nuevo cliente”.
           </div>
         ) : (
           <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/40">
@@ -82,9 +85,13 @@ export default function PortalHome() {
                   <th className="px-4 py-2"></th>
                 </tr>
               </thead>
+
               <tbody>
                 {clientes.map((c) => (
-                  <tr key={c.id} className="border-t border-slate-800/70">
+                  <tr
+                    key={c.id}
+                    className="border-t border-slate-800/70 hover:bg-slate-900 cursor-pointer"
+                  >
                     <td className="px-4 py-2">{c.nombre}</td>
                     <td className="px-4 py-2 text-slate-300">{c.email}</td>
                     <td className="px-4 py-2 text-slate-300">
@@ -98,7 +105,7 @@ export default function PortalHome() {
                         href={`/portal/case/${c.id}`}
                         className="text-emerald-400 hover:text-emerald-300 text-xs font-medium"
                       >
-                        Ver expediente
+                        Ver expediente →
                       </Link>
                     </td>
                   </tr>
