@@ -102,7 +102,7 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
           <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
             <div
               className="h-2 bg-emerald-500 transition-all"
-              style={{ width: `${caso.progreso ?? 0}%` }}
+              style={{ width: ${caso.progreso ?? 0}% }}
             />
           </div>
           <p className="text-xs text-slate-400">
