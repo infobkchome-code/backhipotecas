@@ -189,3 +189,4 @@ function pasoOrden(estado: string): number {
       return 0;
   }
 }
+
