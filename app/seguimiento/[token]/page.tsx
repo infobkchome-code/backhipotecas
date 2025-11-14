@@ -1,138 +1,145 @@
 // app/seguimiento/[token]/page.tsx
+import { supabase } from '@/lib/supabaseClient';
+import Link from 'next/link';
 
-import Link from "next/link";
-import { supabaseAdmin } from "@/lib/supabaseAdminClient";
+export const dynamic = 'force-dynamic';
 
-type SeguimientoPageProps = {
-  params: {
-    token: string;
-  };
+type CasoPublico = {
+  id: string;
+  titulo: string | null;
+  estado: string | null;
+  progreso: number | null;
+  notas: string | null;
+  created_at: string;
+  updated_at: string;
 };
 
 const ESTADO_LABEL: Record<string, string> = {
-  en_estudio: "En estudio",
-  tasacion: "Tasación",
-  ofer: "Oferta",
-  firmada: "Firmada",
-  denegado: "Denegado",
+  en_estudio: 'En estudio',
+  tasacion: 'Tasación',
+  fein: 'FEIN / Oferta',
+  notaria: 'Notaría',
+  compraventa: 'Firma compraventa',
+  fin: 'Expediente finalizado',
+  denegado: 'Denegado',
 };
 
-export default async function SeguimientoPage({ params }: SeguimientoPageProps) {
-  const { token } = params;
+function estadoLabel(estado: string | null) {
+  if (!estado) return 'En estudio';
+  return ESTADO_LABEL[estado] ?? estado;
+}
 
-  // 🔍 Buscar el caso por el seguimiento_token
-  const { data: caso, error } = await supabaseAdmin
-    .from("casos")
-    .select(
-      `
-      id,
-      titulo,
-      estado,
-      progreso,
-      notas_internas,
-      created_at,
-      updated_at,
-      clientes:clientes!inner (
-        nombre
-      )
-    `
-    )
-    .eq("seguimiento_token", token)
-    .maybeSingle(); // si no hay resultado, devuelve null en vez de lanzar error
+export default async function SeguimientoPage({
+  params,
+}: {
+  params: { token: string };
+}) {
+  const token = params.token;
 
-  if (error) {
-    console.error("Error buscando caso por token:", error);
-  }
+  // Buscar el caso por seguimiento_token
+  const { data, error } = await supabase
+    .from('casos')
+    .select('id, titulo, estado, progreso, notas, created_at, updated_at')
+    .eq('seguimiento_token', token)
+    .single<CasoPublico>();
 
-  // ❌ Si no hay caso → enlace no válido
-  if (!caso) {
+  if (error || !data) {
+    // Enlace no válido o token que no existe
     return (
-      <main className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
-        <div className="max-w-md w-full bg-slate-900/70 border border-slate-800 rounded-xl p-6 shadow-lg">
-          <h1 className="text-xl font-semibold mb-2 text-center">
+      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
+        <div className="max-w-md w-full space-y-4 text-center">
+          <h1 className="text-xl font-semibold">
             Enlace de seguimiento no válido
           </h1>
-          <p className="text-sm text-slate-300 mb-4 text-center">
-            No hemos encontrado ningún expediente asociado a este enlace.
-            Es posible que haya caducado o que se haya escrito de forma incorrecta.
+          <p className="text-sm text-slate-400">
+            No hemos encontrado ningún expediente asociado a este enlace. Es
+            posible que haya caducado o que se haya escrito de forma incorrecta.
           </p>
-          <div className="flex justify-center">
-            <Link
-              href="/"
-              className="inline-flex items-center px-4 py-2 rounded-md bg-emerald-500 hover:bg-emerald-400 text-sm font-medium text-slate-950 transition-colors"
-            >
-              Volver a BKC Hipotecas
-            </Link>
-          </div>
+          <Link
+            href="/"
+            className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400"
+          >
+            Volver a BKC Hipotecas
+          </Link>
         </div>
-      </main>
+      </div>
     );
   }
 
-  const estadoLegible = ESTADO_LABEL[caso.estado] ?? caso.estado;
+  const progresoSeguro =
+    typeof data.progreso === 'number' && !Number.isNaN(data.progreso)
+      ? Math.min(100, Math.max(0, data.progreso))
+      : 0;
 
   return (
-    <main className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
-      <div className="max-w-xl w-full bg-slate-900/70 border border-slate-800 rounded-xl p-6 shadow-lg space-y-4">
-        <header className="space-y-1">
-          <p className="text-xs uppercase tracking-[0.2em] text-emerald-400">
-            Seguimiento de expediente
-          </p>
-          <h1 className="text-2xl font-semibold">
-            {caso.titulo || "Tu expediente hipotecario"}
+    <div className="min-h-screen bg-slate-950 text-slate-50">
+      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">
+            Seguimiento de tu expediente hipotecario
           </h1>
-          <p className="text-sm text-slate-300">
-            Cliente:{" "}
-            <span className="font-medium">
-              {caso.clientes?.nombre || "Sin nombre"}
-            </span>
-          </p>
-        </header>
-
-        {/* Estado */}
-        <section className="space-y-2">
-          <p className="text-sm text-slate-300">
-            Estado actual:{" "}
-            <span className="font-semibold text-emerald-400">
-              {estadoLegible}
-            </span>
-          </p>
-
-          {/* Barra de progreso simple */}
-          <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-            <div
-              className="h-2 bg-emerald-500 transition-all"
-              style={{ width: ${caso.progreso ?? 0}% }}
-            />
-          </div>
           <p className="text-xs text-slate-400">
-            Progreso aproximado: {caso.progreso ?? 0}%
+            Este enlace te permite consultar el estado de tu expediente con BKC
+            Hipotecas.
+          </p>
+        </div>
+      </header>
+
+      <main className="max-w-3xl mx-auto px-6 py-6 space-y-6">
+        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
+          <div className="flex flex-col gap-1">
+            <p className="text-xs text-slate-400">Expediente</p>
+            <h2 className="text-lg font-semibold">
+              {data.titulo || 'Expediente hipotecario'}
+            </h2>
+            <p className="text-xs text-slate-500">
+              Creado el{' '}
+              {new Date(data.created_at).toLocaleDateString('es-ES')}
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div>
+              <p className="text-xs text-slate-400 mb-1">Estado actual</p>
+              <p className="text-sm font-medium">
+                {estadoLabel(data.estado ?? null)}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs text-slate-400 mb-1">
+                Progreso aproximado
+              </p>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
+                  <div
+                    className="h-2 bg-emerald-500 transition-all"
+                    style={{ width: ${progresoSeguro}% }}
+                  />
+                </div>
+                <span className="text-xs text-slate-200">
+                  {progresoSeguro}%
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs text-slate-400 mb-1">
+              Comentarios del equipo
+            </p>
+            <p className="text-sm text-slate-100 whitespace-pre-wrap">
+              {data.notas?.trim() ||
+                'De momento no hay comentarios adicionales sobre tu expediente.'}
+            </p>
+          </div>
+
+          <p className="text-[11px] text-slate-500">
+            Última actualización:{' '}
+            {new Date(data.updated_at).toLocaleString('es-ES')}
           </p>
         </section>
-
-        {/* Notas para el cliente */}
-        {caso.notas_internas && (
-          <section className="space-y-1">
-            <h2 className="text-sm font-semibold">Notas de tu gestor</h2>
-            <p className="text-sm text-slate-200 whitespace-pre-line">
-              {caso.notas_internas}
-            </p>
-          </section>
-        )}
-
-        <footer className="pt-2 border-t border-slate-800 mt-2 text-xs text-slate-400 flex justify-between">
-          <span>
-            Expediente creado:{" "}
-            {new Date(caso.created_at).toLocaleDateString("es-ES")}
-          </span>
-          <span>
-            Última actualización:{" "}
-            {new Date(caso.updated_at ?? caso.created_at).toLocaleDateString(
-              "es-ES"
-            )}
-          </span>
-        </footer>
-      </div>
-    </main>
+      </main>
+    </div>
   );
 }
