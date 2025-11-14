@@ -10,12 +10,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No autenticado' }, { status: 401 });
     }
 
-    const { data, error } = await supabase
-      .from('casos')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('cliente_id', cliente_id)
-      .order('created_at', { ascending: false });
+   const { data, error } = await supabase
+  .from('casos')
+  .select(`
+    id,
+    user_id_uuid,
+    client_id_uuid,
+    titulo,
+    estado,
+    progreso,
+    notas_internas,
+    seguimiento_token,   -- ⬅ NUEVO
+    created_at,
+    updated_at,
+    clientes:clientes (
+      id,
+      nombre,
+      email,
+      telefono
+    )
+  `)
+  .order('created_at', { ascending: false });
+
 
     if (error) return NextResponse.json({ error: error.message }, { status: 400 });
 
