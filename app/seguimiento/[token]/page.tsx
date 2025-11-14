@@ -1,146 +1,135 @@
 // app/seguimiento/[token]/page.tsx
-import { supabaseAdmin } from '@/lib/supabaseAdminClient';
+import { supabase } from '@/lib/supabaseClient';
 
-type SeguimientoPageProps = {
-  params: {
-    token: string;
-  };
-};
-
-type CasoSeguimiento = {
-  id: string;
-  titulo: string;
-  estado: string;
-  progreso: number;
-  notas: string | null;
-  created_at: string;
-  updated_at: string;
-};
+interface SeguimientoPageProps {
+  params: { token: string };
+}
 
 const ESTADO_LABEL: Record<string, string> = {
   en_estudio: 'En estudio',
   tasacion: 'Tasación',
-  fein: 'FEIN / Oferta',
-  notaria: 'Notaría',
-  compraventa: 'Firma compraventa',
-  fin: 'Expediente finalizado',
+  fein_fein: 'FEIN / Oferta',
   denegado: 'Denegado',
+  firmado: 'Firmado',
 };
 
 export default async function SeguimientoPage({ params }: SeguimientoPageProps) {
-  const token = params.token;
+  const { token } = params;
 
-  // Cargar el caso usando el token público
-  const { data, error } = await supabaseAdmin
+  // Buscar el caso por el token
+  const { data: caso, error } = await supabase
     .from('casos')
-    .select('id, titulo, estado, progreso, notas, created_at, updated_at')
+    .select(
+      `
+      id,
+      titulo,
+      estado,
+      progreso,
+      notas_internas,
+      created_at,
+      updated_at,
+      clientes:clientes (
+        nombre,
+        email,
+        telefono
+      )
+    `,
+    )
     .eq('seguimiento_token', token)
     .single();
 
-  if (error || !data) {
-    console.error('Error cargando expediente público:', error);
-
+  if (error || !caso) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col items-center justify-center px-4 text-center">
-        <h1 className="text-xl font-semibold mb-2">
-          No se ha encontrado el expediente
+      <main className="min-h-screen flex flex-col items-center justify-center bg-slate-950 text-slate-50 px-4">
+        <h1 className="text-2xl font-semibold mb-4 text-center">
+          Enlace de seguimiento no válido
         </h1>
-        <p className="text-sm text-slate-400 max-w-md mb-4">
-          Es posible que el enlace haya caducado, que se haya escrito mal o que
-          haya sido desactivado. Contacta con tu asesor para obtener un nuevo
-          enlace de seguimiento.
+        <p className="mb-6 text-slate-300 text-center max-w-md">
+          No hemos encontrado ningún expediente asociado a este enlace. Es posible que haya
+          caducado o que se haya escrito de forma incorrecta.
         </p>
-      </div>
+        <a
+          href="https://bkchome.es"
+          className="px-4 py-2 rounded-md bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-medium"
+        >
+          Volver a BKC Hipotecas
+        </a>
+      </main>
     );
   }
-
-  const caso: CasoSeguimiento = {
-    id: data.id,
-    titulo: data.titulo,
-    estado: data.estado,
-    progreso: data.progreso ?? 0,
-    notas: data.notas ?? null,
-    created_at: data.created_at,
-    updated_at: data.updated_at,
-  };
 
   const estadoLabel = ESTADO_LABEL[caso.estado] ?? caso.estado;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50">
-      {/* Cabecera */}
-      <header className="border-b border-slate-800 px-6 py-4">
-        <h1 className="text-xl font-semibold">Seguimiento de tu expediente</h1>
-        <p className="text-xs text-slate-400 mt-1">
-          Estás viendo el estado actualizado de tu expediente hipotecario con
-          BKC Hipotecas.
-        </p>
-      </header>
+    <main className="min-h-screen bg-slate-950 text-slate-50 flex justify-center px-4 py-10">
+      <div className="w-full max-w-3xl bg-slate-900/70 border border-slate-800 rounded-2xl p-6 md:p-8 shadow-xl shadow-black/40">
+        <header className="mb-6">
+          <p className="text-sm uppercase tracking-[0.2em] text-emerald-400 mb-1">
+            BKC HIPOTECAS
+          </p>
+          <h1 className="text-2xl md:text-3xl font-semibold">
+            Seguimiento de tu expediente
+          </h1>
+          <p className="text-slate-300 mt-2">
+            Aquí puedes ver en qué estado se encuentra tu operación hipotecaria.
+          </p>
+        </header>
 
-      <main className="max-w-2xl mx-auto px-6 py-8 space-y-6">
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-          <div>
-            <p className="text-xs text-slate-400 mb-1">Título del expediente</p>
-            <p className="text-base font-medium">{caso.titulo}</p>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <p className="text-xs text-slate-400 mb-1">Estado actual</p>
-              <p className="inline-flex items-center rounded-full bg-slate-800 px-3 py-1 text-xs font-medium text-emerald-300">
-                {estadoLabel}
-              </p>
-            </div>
-            <div>
-              <p className="text-xs text-slate-400 mb-1">
-                Progreso aproximado
-              </p>
-              <p className="text-sm font-medium">{caso.progreso ?? 0}%</p>
-              <div className="mt-1 h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-                <div
-                  className="h-2 bg-emerald-500 transition-all"
-                  style={{
-                    width: `${Math.min(
-                      100,
-                      Math.max(0, Number(caso.progreso ?? 0))
-                    )}%`,
-                  }}
-                />
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-xs text-slate-400 mb-1">
-              Última actualización
+        <section className="mb-6 grid gap-4 md:grid-cols-2">
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <h2 className="text-sm font-medium text-slate-400 mb-1">Cliente</h2>
+            <p className="font-semibold">
+              {caso.clientes?.nombre ?? 'Cliente BKC'}
             </p>
-            <p className="text-xs text-slate-300">
-              {new Date(caso.updated_at).toLocaleString('es-ES')}
+            {caso.clientes?.email && (
+              <p className="text-sm text-slate-300">{caso.clientes.email}</p>
+            )}
+            {caso.clientes?.telefono && (
+              <p className="text-sm text-slate-300">{caso.clientes.telefono}</p>
+            )}
+          </div>
+
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4">
+            <h2 className="text-sm font-medium text-slate-400 mb-1">Expediente</h2>
+            <p className="font-semibold">{caso.titulo}</p>
+            <p className="text-sm text-slate-300 mt-1">
+              Estado:{' '}
+              <span className="font-semibold text-emerald-400">{estadoLabel}</span>
+            </p>
+            <p className="text-sm text-slate-300 mt-1">
+              Progreso aproximado:{' '}
+              <span className="font-semibold">{caso.progreso ?? 0}%</span>
             </p>
           </div>
         </section>
 
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-2">
-          <h2 className="text-sm font-semibold text-slate-200">
+        <section className="mb-6">
+          <h2 className="text-sm font-medium text-slate-400 mb-2">
+            Línea de progreso
+          </h2>
+          <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden">
+            <div
+              className="h-3 bg-emerald-500 transition-all"
+              style={{ width: `${caso.progreso ?? 0}%` }}
+            />
+          </div>
+        </section>
+
+        <section>
+          <h2 className="text-sm font-medium text-slate-400 mb-2">
             Comentarios de tu asesor
           </h2>
-          {caso.notas ? (
-            <p className="text-sm text-slate-200 whitespace-pre-wrap">
-              {caso.notas}
-            </p>
-          ) : (
-            <p className="text-sm text-slate-400">
-              De momento no hay comentarios visibles. Tu asesor irá actualizando
-              este espacio conforme avance la operación.
-            </p>
-          )}
+          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 text-sm text-slate-200 whitespace-pre-wrap">
+            {caso.notas_internas?.trim()
+              ? caso.notas_internas
+              : 'Tu expediente está en curso. Cuando haya novedades importantes, las verás reflejadas aquí.'}
+          </div>
         </section>
 
-        <p className="text-[11px] text-slate-500 text-center">
-          Si tienes dudas sobre el estado de tu expediente, contacta con tu
-          asesor de BKC Hipotecas.
-        </p>
-      </main>
-    </div>
+        <footer className="mt-8 text-xs text-slate-500 text-center">
+          Cualquier duda, contacta con tu asesor BKC Hipotecas.
+        </footer>
+      </div>
+    </main>
   );
 }
