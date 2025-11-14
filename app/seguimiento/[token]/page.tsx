@@ -1,8 +1,11 @@
-'use client';
+// app/seguimiento/[token]/page.tsx
+import { supabaseAdmin } from '@/lib/supabaseAdminClient';
 
-import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+type SeguimientoPageProps = {
+  params: {
+    token: string;
+  };
+};
 
 type CasoSeguimiento = {
   id: string;
@@ -24,76 +27,42 @@ const ESTADO_LABEL: Record<string, string> = {
   denegado: 'Denegado',
 };
 
-export default function SeguimientoPage() {
-  const params = useParams<{ token: string }>();
-  const token = params?.token as string | undefined;
+export default async function SeguimientoPage({ params }: SeguimientoPageProps) {
+  const token = params.token;
 
-  const [caso, setCaso] = useState<CasoSeguimiento | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Cargar el caso usando el token público
+  const { data, error } = await supabaseAdmin
+    .from('casos')
+    .select('id, titulo, estado, progreso, notas, created_at, updated_at')
+    .eq('seguimiento_token', token)
+    .single();
 
-  useEffect(() => {
-    if (!token) return;
+  if (error || !data) {
+    console.error('Error cargando expediente público:', error);
 
-    const fetchCaso = async () => {
-      setLoading(true);
-      setErrorMsg(null);
-
-      const { data, error } = await supabase
-        .from('casos')
-        .select('id, titulo, estado, progreso, notas, created_at, updated_at')
-        .eq('seguimiento_token', token)
-        .single();
-
-      if (error || !data) {
-        console.error('Error cargando expediente público:', error);
-        setErrorMsg(
-          'No se ha encontrado este expediente o el enlace ya no está activo.'
-        );
-        setCaso(null);
-      } else {
-        setCaso({
-          id: data.id,
-          titulo: data.titulo,
-          estado: data.estado,
-          progreso: data.progreso ?? 0,
-          notas: data.notas ?? null,
-          created_at: data.created_at,
-          updated_at: data.updated_at,
-        });
-      }
-
-      setLoading(false);
-    };
-
-    fetchCaso();
-  }, [token]);
-
-  // ESTADOS DE CARGA
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
-        <p className="text-sm text-slate-300">
-          Cargando información de tu expediente…
-        </p>
-      </div>
-    );
-  }
-
-  if (errorMsg || !caso) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col items-center justify-center px-4 text-center">
         <h1 className="text-xl font-semibold mb-2">
           No se ha encontrado el expediente
         </h1>
         <p className="text-sm text-slate-400 max-w-md mb-4">
-          {errorMsg ??
-            'Es posible que el enlace haya caducado o que haya sido desactivado. Contacta con tu asesor para obtener un nuevo enlace de seguimiento.'}
+          Es posible que el enlace haya caducado, que se haya escrito mal o que
+          haya sido desactivado. Contacta con tu asesor para obtener un nuevo
+          enlace de seguimiento.
         </p>
       </div>
     );
   }
+
+  const caso: CasoSeguimiento = {
+    id: data.id,
+    titulo: data.titulo,
+    estado: data.estado,
+    progreso: data.progreso ?? 0,
+    notas: data.notas ?? null,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+  };
 
   const estadoLabel = ESTADO_LABEL[caso.estado] ?? caso.estado;
 
@@ -175,4 +144,3 @@ export default function SeguimientoPage() {
     </div>
   );
 }
-
