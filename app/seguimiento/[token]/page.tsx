@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { supabaseAdmin } from '@/lib/supabaseAdminClient';
 
+
 type CasoSeguimiento = {
   id: string;
   titulo: string;
