@@ -1,12 +1,24 @@
-import { createClient } from '@supabase/supabase-js';
+// lib/supabaseClient.ts
+import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
+// Estas dos variables YA las tienes en Vercel (las mismas que usaba el proyecto):
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error(
-    'Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY en las variables de entorno'
-  );
+// Comprobaciones para evitar errores silenciosos
+if (!supabaseUrl) {
+  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL in supabaseClient.ts');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+if (!supabaseAnonKey) {
+  throw new Error('Missing NEXT_PUBLIC_SUPABASE_ANON_KEY in supabaseClient.ts');
+}
+
+// Cliente normal (frontend + rutas API)
+export const supabase: SupabaseClient = createClient(
+  supabaseUrl,
+  supabaseAnonKey
+);
+
+// Export default por si en algún sitio se usa "import supabase from ..."
+export default supabase;
