@@ -36,15 +36,36 @@ export default async function SeguimientoPage({
 }) {
   const token = params.token;
 
-  // Buscar el caso por seguimiento_token
-  const { data, error } = await supabase
+  // 1º intento: buscar por seguimiento_token
+  let { data, error } = await supabase
     .from('casos')
     .select('id, titulo, estado, progreso, notas, created_at, updated_at')
     .eq('seguimiento_token', token)
-    .single<CasoPublico>();
+    .maybeSingle<CasoPublico>();
 
-  if (error || !data) {
-    // Enlace no válido o token que no existe
+  // DEBUG (para ver en los logs de Vercel)
+  console.log('DEBUG seguimiento_token query', { token, error, hasData: !!data });
+
+  // 2º intento (compatibilidad): buscar por public_token
+  if (!data) {
+    const res2 = await supabase
+      .from('casos')
+      .select('id, titulo, estado, progreso, notas, created_at, updated_at')
+      .eq('public_token', token)
+      .maybeSingle<CasoPublico>();
+
+    console.log('DEBUG public_token query', {
+      token,
+      error2: res2.error,
+      hasData2: !!res2.data,
+    });
+
+    data = res2.data;
+    error = res2.error;
+  }
+
+  if (!data) {
+    // Enlace no válido (ni seguimiento_token ni public_token)
     return (
       <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
         <div className="max-w-md w-full space-y-4 text-center">
