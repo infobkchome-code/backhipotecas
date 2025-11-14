@@ -9,5 +9,4 @@ if (!supabaseUrl || !supabaseAnonKey) {
   );
 }
 
-// 👇 IMPORTANTE: tiene que existir EXACTAMENTE este export:
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
