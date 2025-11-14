@@ -1,18 +1,21 @@
-// lib/supabaseAdminClient.ts
 import { createClient } from '@supabase/supabase-js';
 
-// ⚠️ Este cliente es SOLO para el servidor (route handlers, páginas server-side, etc.)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
+// Comprobaciones para evitar errores silenciosos
 if (!supabaseUrl) {
-  throw new Error('Falta la variable de entorno NEXT_PUBLIC_SUPABASE_URL');
+  throw new Error('Missing NEXT_PUBLIC_SUPABASE_URL for supabaseAdminClient');
 }
 
 if (!serviceRoleKey) {
-  throw new Error('Falta la variable de entorno SUPABASE_SERVICE_ROLE_KEY');
+  throw new Error('Missing SUPABASE_SERVICE_ROLE_KEY for supabaseAdminClient');
 }
 
+// Cliente “admin” para usar en el servidor (RLS bypass)
 export const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
   auth: {
     autoRefreshToken: false,
+    persistSession: false,
+  },
+});
