@@ -13,6 +13,9 @@ type Caso = {
   notas: string | null;
   created_at: string;
   updated_at: string;
+  seguimiento_token: string | null;
+};
+
 };
 
 type FileItem = {
