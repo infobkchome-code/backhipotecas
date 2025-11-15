@@ -144,7 +144,7 @@ export default function PortalPage() {
           <div className="text-xs uppercase tracking-[0.2em] text-emerald-400">
             BKC HIPOTECAS · PANEL INTERNO
           </div>
-          <h1 className="text-xl font-semibold mt-1">Clientes y expedientes</h1>
+          <h1 className="text-xl font-semibold mt-1">CLIENTES Y EXPEDIENTES (PRUEBA)</h1>
           <p className="text-xs text-slate-400">
             Desde aquí ves todos tus clientes y accedes a su expediente.
           </p>
