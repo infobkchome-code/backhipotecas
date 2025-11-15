@@ -97,14 +97,15 @@ export default function CaseDetailPage() {
       const c = data as any;
 
       const casoNormalizado: Caso = {
-        id: c.id,
-        titulo: c.titulo,
-        estado: c.estado,
-        progreso: c.progreso ?? 0,
-        notas: c.notas ?? '',
-        created_at: c.created_at,
-        updated_at: c.updated_at,
-      };
+  id: c.id,
+  titulo: c.titulo,
+  estado: c.estado,
+  progreso: c.progreso ?? 0,
+  notas: c.notas ?? '',
+  created_at: c.created_at,
+  updated_at: c.updated_at,
+  seguimiento_token: c.seguimiento_token ?? null,
+};
 
       setCaso(casoNormalizado);
       setEstado(casoNormalizado.estado);
@@ -290,7 +291,10 @@ export default function CaseDetailPage() {
   }
 
   // 🔗 Enlace de seguimiento PÚBLICO para el cliente
-  const trackingUrl = `https://backhipotecas.vercel.app/seguimiento/${caso.id}`;
+  const trackingUrl = caso.seguimiento_token
+  ? `https://backhipotecas.vercel.app/seguimiento/${caso.seguimiento_token}`
+  : 'Aún no hay enlace de seguimiento para este expediente (falta token).';
+
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
