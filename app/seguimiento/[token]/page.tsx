@@ -11,9 +11,8 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
 
   const supabase = createClient();
 
-  // ⬇️ IMPORTANTE: usa la tabla donde está seguimiento_token (yo asumo "casos")
   const { data, error } = await supabase
-    .from("casos") // si tu tabla se llama distinto, pon el nombre real
+    .from("casos") // si tu tabla se llama distinto, cámbialo aquí
     .select("*")
     .eq("seguimiento_token", token)
     .single();
@@ -78,15 +77,11 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
               </p>
             </section>
 
-            {/* 🧪 Bloque de DEBUG temporal para ver qué llega desde la BD */}
+            {/* DEBUG: ver exactamente qué campos devuelve la BD */}
             <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6">
               <h3 className="text-base font-semibold mb-2">
                 Datos completos del expediente (debug)
               </h3>
-              <p className="text-xs text-slate-400 mb-2">
-                Esta sección es solo para que tú veas qué campos tiene la tabla.
-                Luego la quitamos.
-              </p>
               <pre className="text-xs bg-slate-950/70 p-3 rounded-md overflow-x-auto">
                 {JSON.stringify(expediente, null, 2)}
               </pre>
