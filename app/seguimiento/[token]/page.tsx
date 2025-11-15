@@ -1,4 +1,3 @@
-// app/seguimiento/[token]/page.tsx
 import React from "react";
 import { createClient } from "@/lib/supabase/server";
 
@@ -40,7 +39,6 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
 
       <main className="max-w-4xl mx-auto px-6 py-8 space-y-8">
         {enlaceNoValido ? (
-          // 🔴 Token NO válido
           <section className="bg-red-950/40 border border-red-800 rounded-xl p-6">
             <h2 className="text-lg font-semibold mb-2">
               Enlace de seguimiento no válido
@@ -52,7 +50,6 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
             </p>
           </section>
         ) : (
-          // 🟢 Token correcto: mostramos datos del expediente
           <>
             <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 space-y-3">
               <h2 className="text-lg font-semibold">Estado del expediente</h2>
@@ -69,3 +66,45 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
                 <span className="font-semibold">Estado actual: </span>
                 {expediente.estado || "En estudio"}
               </p>
+
+              <p className="text-sm text-slate-400">
+                En estos momentos estamos procesando tu documentación. Más
+                adelante verás aquí el detalle de cada fase: documentación,
+                análisis, tasación y firma en notaría.
+              </p>
+            </section>
+
+            <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6">
+              <h3 className="text-base font-semibold mb-2">
+                Datos completos del expediente (debug)
+              </h3>
+              <pre className="text-xs bg-slate-950/70 p-3 rounded-md overflow-x-auto">
+                {JSON.stringify(expediente, null, 2)}
+              </pre>
+            </section>
+          </>
+        )}
+
+        <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6">
+          <h3 className="text-base font-semibold mb-2">
+            ¿Alguna duda sobre tu hipoteca?
+          </h3>
+          <p className="text-sm text-slate-300 mb-3">
+            Si tienes cualquier consulta, puedes escribirnos indicando este
+            código de seguimiento y uno de nuestros asesores de BKC Hipotecas te
+            ayudará.
+          </p>
+          <ul className="text-sm text-slate-300 space-y-1">
+            <li>
+              📧 Email: <span className="font-medium">hipotecas@bkchome.es</span>
+            </li>
+            <li>
+              📞 Teléfono:{" "}
+              <span className="font-medium">(+34) 617 476 695
+            </li>
+          </ul>
+        </section>
+      </main>
+    </div>
+  );
+}
