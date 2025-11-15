@@ -11,8 +11,9 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
 
   const supabase = createClient();
 
+  // ⬇️ IMPORTANTE: usa la tabla donde está seguimiento_token (yo asumo "casos")
   const { data, error } = await supabase
-    .from("casos") // <- tu tabla, la misma que usas en la API
+    .from("casos") // si tu tabla se llama distinto, pon el nombre real
     .select("*")
     .eq("seguimiento_token", token)
     .single();
@@ -28,7 +29,7 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
             Seguimiento de tu expediente hipotecario
           </h1>
           <p className="text-sm text-slate-400">
-            BKC Hipotecas · Enlace de seguimiento
+            BKC Hipotecas · Enlace de seguimiento (VERSIÓN NUEVA)
           </p>
         </div>
         <div className="text-xs text-slate-400 text-right">
@@ -75,6 +76,20 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
                 adelante verás aquí el detalle de cada fase: documentación,
                 análisis, tasación y firma en notaría.
               </p>
+            </section>
+
+            {/* 🧪 Bloque de DEBUG temporal para ver qué llega desde la BD */}
+            <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6">
+              <h3 className="text-base font-semibold mb-2">
+                Datos completos del expediente (debug)
+              </h3>
+              <p className="text-xs text-slate-400 mb-2">
+                Esta sección es solo para que tú veas qué campos tiene la tabla.
+                Luego la quitamos.
+              </p>
+              <pre className="text-xs bg-slate-950/70 p-3 rounded-md overflow-x-auto">
+                {JSON.stringify(expediente, null, 2)}
+              </pre>
             </section>
           </>
         )}
