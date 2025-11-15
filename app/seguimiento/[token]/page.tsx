@@ -1,96 +1,15 @@
 // app/seguimiento/[token]/page.tsx
-import { supabase } from '@/lib/supabaseClient';
-import Link from 'next/link';
+import React from "react";
 
-export const dynamic = 'force-dynamic';
-
-type CasoPublico = {
-  id: string;
-  titulo: string | null;
-  estado: string | null;
-  progreso: number | null;
-  notas: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-const ESTADO_LABEL: Record<string, string> = {
-  en_estudio: 'En estudio',
-  tasacion: 'Tasación',
-  fein: 'FEIN / Oferta',
-  notaria: 'Notaría',
-  compraventa: 'Firma compraventa',
-  fin: 'Expediente finalizado',
-  denegado: 'Denegado',
-};
-
-function estadoLabel(estado: string | null) {
-  if (!estado) return 'En estudio';
-  return ESTADO_LABEL[estado] ?? estado;
+interface SeguimientoPageProps {
+  params: { token: string };
 }
 
-export default async function SeguimientoPage({
-  params,
-}: {
-  params: { token: string };
-}) {
-  const token = params.token;
+export default function SeguimientoPage({ params }: SeguimientoPageProps) {
+  const { token } = params;
 
-  // 1º intento: buscar por seguimiento_token
-  let { data, error } = await supabase
-    .from('casos')
-    .select('id, titulo, estado, progreso, notas, created_at, updated_at')
-    .eq('seguimiento_token', token)
-    .maybeSingle<CasoPublico>();
-
-  // DEBUG (para ver en los logs de Vercel)
-  console.log('DEBUG seguimiento_token query', { token, error, hasData: !!data });
-
-  // 2º intento (compatibilidad): buscar por public_token
-  if (!data) {
-    const res2 = await supabase
-      .from('casos')
-      .select('id, titulo, estado, progreso, notas, created_at, updated_at')
-      .eq('public_token', token)
-      .maybeSingle<CasoPublico>();
-
-    console.log('DEBUG public_token query', {
-      token,
-      error2: res2.error,
-      hasData2: !!res2.data,
-    });
-
-    data = res2.data;
-    error = res2.error;
-  }
-
-  if (!data) {
-    // Enlace no válido (ni seguimiento_token ni public_token)
-    return (
-      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
-        <div className="max-w-md w-full space-y-4 text-center">
-          <h1 className="text-xl font-semibold">
-            Enlace de seguimiento no válido
-          </h1>
-          <p className="text-sm text-slate-400">
-            No hemos encontrado ningún expediente asociado a este enlace. Es
-            posible que haya caducado o que se haya escrito de forma incorrecta.
-          </p>
-          <Link
-            href="/"
-            className="inline-flex items-center justify-center rounded-md bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 hover:bg-emerald-400"
-          >
-            Volver a BKC Hipotecas
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  const progresoSeguro =
-    typeof data.progreso === 'number' && !Number.isNaN(data.progreso)
-      ? Math.min(100, Math.max(0, data.progreso))
-      : 0;
+  // Más adelante aquí haremos el fetch a Supabase con el token
+  // y mostraremos el estado real del expediente.
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
@@ -99,66 +18,40 @@ export default async function SeguimientoPage({
           <h1 className="text-xl font-semibold">
             Seguimiento de tu expediente hipotecario
           </h1>
-          <p className="text-xs text-slate-400">
-            Este enlace te permite consultar el estado de tu expediente con BKC
-            Hipotecas.
+          <p className="text-sm text-slate-400">
+            BKC Hipotecas · Enlace de seguimiento
           </p>
+        </div>
+        <div className="text-xs text-slate-400">
+          Código de seguimiento:<br />
+          <span className="font-mono text-slate-100">{token}</span>
         </div>
       </header>
 
-      <main className="max-w-3xl mx-auto px-6 py-6 space-y-6">
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
-          <div className="flex flex-col gap-1">
-            <p className="text-xs text-slate-400">Expediente</p>
-            <h2 className="text-lg font-semibold">
-              {data.titulo || 'Expediente hipotecario'}
-            </h2>
-            <p className="text-xs text-slate-500">
-              Creado el{' '}
-              {new Date(data.created_at).toLocaleDateString('es-ES')}
-            </p>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div>
-              <p className="text-xs text-slate-400 mb-1">Estado actual</p>
-              <p className="text-sm font-medium">
-                {estadoLabel(data.estado ?? null)}
-              </p>
-            </div>
-
-            <div>
-              <p className="text-xs text-slate-400 mb-1">
-                Progreso aproximado
-              </p>
-              <div className="flex items-center gap-2">
-                <div className="flex-1 h-2 bg-slate-800 rounded-full overflow-hidden">
-                  <div
-                    className="h-2 bg-emerald-500 transition-all"
-                    style={{ width: ${progresoSeguro}% }}
-                  />
-                </div>
-                <span className="text-xs text-slate-200">
-                  {progresoSeguro}%
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <p className="text-xs text-slate-400 mb-1">
-              Comentarios del equipo
-            </p>
-            <p className="text-sm text-slate-100 whitespace-pre-wrap">
-              {data.notas?.trim() ||
-                'De momento no hay comentarios adicionales sobre tu expediente.'}
-            </p>
-          </div>
-
-          <p className="text-[11px] text-slate-500">
-            Última actualización:{' '}
-            {new Date(data.updated_at).toLocaleString('es-ES')}
+      <main className="max-w-4xl mx-auto px-6 py-8 space-y-8">
+        <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6">
+          <h2 className="text-lg font-semibold mb-2">Estado del expediente</h2>
+          <p className="text-sm text-slate-300">
+            En estos momentos estamos procesando tu documentación. 
+            Cuando conectemos esta página con la base de datos, aquí
+            verás el estado detallado de cada fase: documentación, análisis,
+            tasación, firma de FEIN/FIAE y firma en notaría.
           </p>
+        </section>
+
+        <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6">
+          <h3 className="text-base font-semibold mb-2">
+            ¿Alguna duda sobre tu hipoteca?
+          </h3>
+          <p className="text-sm text-slate-300 mb-3">
+            Si tienes cualquier consulta, puedes escribirnos indicando este
+            código de seguimiento y uno de nuestros asesores de BKC Hipotecas
+            te ayudará.
+          </p>
+          <ul className="text-sm text-slate-300 space-y-1">
+            <li>📧 Email: <span className="font-medium">hipotecas@bkchome.es</span></li>
+            <li>📞 Teléfono: <span className="font-medium">(+34) 000 000 000</span> (ajústalo tú)</li>
+          </ul>
         </section>
       </main>
     </div>
