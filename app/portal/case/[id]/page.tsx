@@ -13,9 +13,7 @@ type Caso = {
   notas: string | null;
   created_at: string;
   updated_at: string;
-  seguimiento_token: string | null;
-};
-
+  seguimiento_token: string | null; // 🔥 IMPORTANTE
 };
 
 type FileItem = {
@@ -55,10 +53,10 @@ export default function CaseDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [docsMsg, setDocsMsg] = useState<string | null>(null);
 
-  // Guardamos el userId en estado para reutilizarlo en Storage
+  // userId para Storage
   const [userId, setUserId] = useState<string | null>(null);
 
-  // Carga del caso y del userId
+  // Cargar caso
   useEffect(() => {
     const fetchCase = async () => {
       setLoading(true);
@@ -88,7 +86,7 @@ export default function CaseDetailPage() {
       if (error || !data) {
         console.error(error);
         setErrorMsg(
-          'No se ha encontrado este expediente o no tienes permisos para verlo.',
+          'No se ha encontrado este expediente o no tienes permisos para verlo.'
         );
         setLoading(false);
         return;
@@ -97,15 +95,15 @@ export default function CaseDetailPage() {
       const c = data as any;
 
       const casoNormalizado: Caso = {
-  id: c.id,
-  titulo: c.titulo,
-  estado: c.estado,
-  progreso: c.progreso ?? 0,
-  notas: c.notas ?? '',
-  created_at: c.created_at,
-  updated_at: c.updated_at,
-  seguimiento_token: c.seguimiento_token ?? null,
-};
+        id: c.id,
+        titulo: c.titulo,
+        estado: c.estado,
+        progreso: c.progreso ?? 0,
+        notas: c.notas ?? '',
+        created_at: c.created_at,
+        updated_at: c.updated_at,
+        seguimiento_token: c.seguimiento_token ?? null, // 🔥 IMPORTANTE
+      };
 
       setCaso(casoNormalizado);
       setEstado(casoNormalizado.estado);
@@ -119,7 +117,7 @@ export default function CaseDetailPage() {
     }
   }, [id]);
 
-  // Cargar documentos de este expediente
+  // Cargar documentos
   useEffect(() => {
     const loadDocs = async () => {
       if (!userId || !id) return;
@@ -152,6 +150,7 @@ export default function CaseDetailPage() {
     loadDocs();
   }, [userId, id]);
 
+  // Guardar cambios
   const handleSave = async () => {
     if (!caso) return;
     setSaving(true);
@@ -190,19 +189,20 @@ export default function CaseDetailPage() {
     setSaving(false);
   };
 
+  // Cambiar archivo
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0] ?? null;
     setFileToUpload(file);
     setDocsMsg(null);
   };
 
+  // Subida
   const handleUpload = async () => {
     if (!fileToUpload || !userId || !caso) return;
     setUploading(true);
     setDocsMsg(null);
 
     try {
-      const ext = fileToUpload.name.split('.').pop();
       const timestamp = Date.now();
       const safeName = fileToUpload.name.replace(/\s+/g, '_');
       const path = `${userId}/${caso.id}/${timestamp}_${safeName}`;
@@ -218,7 +218,7 @@ export default function CaseDetailPage() {
         return;
       }
 
-      // Recargar listado
+      // Recargar docs
       const { data, error: listError } = await supabase.storage
         .from('docs')
         .list(`${userId}/${caso.id}`, { limit: 100, offset: 0 });
@@ -247,13 +247,14 @@ export default function CaseDetailPage() {
     }
   };
 
+  // Descargar
   const handleDownload = async (fileName: string) => {
     if (!userId || !caso) return;
     const path = `${userId}/${caso.id}/${fileName}`;
 
     const { data, error } = await supabase.storage
       .from('docs')
-      .createSignedUrl(path, 60 * 10); // 10 minutos
+      .createSignedUrl(path, 60 * 10);
 
     if (error || !data?.signedUrl) {
       console.error('Error creando signed URL:', error);
@@ -290,11 +291,10 @@ export default function CaseDetailPage() {
     );
   }
 
-  // 🔗 Enlace de seguimiento PÚBLICO para el cliente
+  // 🔗 Enlace correcto para el cliente
   const trackingUrl = caso.seguimiento_token
-  ? `https://backhipotecas.vercel.app/seguimiento/${caso.seguimiento_token}`
-  : 'Aún no hay enlace de seguimiento para este expediente (falta token).';
-
+    ? `https://backhipotecas.vercel.app/seguimiento/${caso.seguimiento_token}`
+    : 'Aún no hay enlace de seguimiento para este expediente.';
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
@@ -316,7 +316,7 @@ export default function CaseDetailPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-6 space-y-6">
-        {/* Mensajes generales */}
+        {/* Mensajes */}
         {errorMsg && (
           <div className="rounded-md border border-red-600 bg-red-950/60 px-4 py-2 text-sm text-red-100">
             {errorMsg}
@@ -328,12 +328,13 @@ export default function CaseDetailPage() {
           </div>
         )}
 
-        {/* Bloque: datos del expediente */}
+        {/* Datos del expediente */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
           <h2 className="text-sm font-semibold text-slate-200">
             Estado del expediente
           </h2>
 
+          {/* Estado */}
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">
               Estado
@@ -351,6 +352,7 @@ export default function CaseDetailPage() {
             </select>
           </div>
 
+          {/* Progreso */}
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">
               Progreso aproximado (%)
@@ -373,6 +375,7 @@ export default function CaseDetailPage() {
             </div>
           </div>
 
+          {/* Notas */}
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">
               Notas internas
@@ -386,6 +389,7 @@ export default function CaseDetailPage() {
             />
           </div>
 
+          {/* Botones */}
           <div className="flex justify-end gap-2">
             <button
               type="button"
@@ -405,13 +409,11 @@ export default function CaseDetailPage() {
           </div>
         </section>
 
-        {/* Bloque: Documentación */}
+        {/* Documentos */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
-          <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-slate-200">
-              Documentación del expediente
-            </h2>
-          </div>
+          <h2 className="text-sm font-semibold text-slate-200">
+            Documentación del expediente
+          </h2>
 
           {docsMsg && (
             <div className="rounded-md border border-slate-700 bg-slate-950/70 px-4 py-2 text-xs text-slate-200">
@@ -435,6 +437,7 @@ export default function CaseDetailPage() {
             </button>
           </div>
 
+          {/* Tabla de docs */}
           <div className="mt-3 border border-slate-800 rounded-md overflow-hidden">
             <table className="w-full text-xs">
               <thead className="bg-slate-900/80 text-slate-400">
@@ -445,9 +448,7 @@ export default function CaseDetailPage() {
                   <th className="px-3 py-2 text-left font-medium">
                     Fecha de alta
                   </th>
-                  <th className="px-3 py-2 text-left font-medium">
-                    Acción
-                  </th>
+                  <th className="px-3 py-2 text-left font-medium">Acción</th>
                 </tr>
               </thead>
               <tbody>
@@ -457,10 +458,11 @@ export default function CaseDetailPage() {
                       colSpan={3}
                       className="px-3 py-3 text-center text-slate-500"
                     >
-                      Aún no hay documentos subidos para este expediente.
+                      Aún no hay documentos subidos.
                     </td>
                   </tr>
                 )}
+
                 {files.map((f) => (
                   <tr
                     key={f.name}
@@ -490,14 +492,13 @@ export default function CaseDetailPage() {
           </div>
         </section>
 
-        {/* 🔥 Bloque: Enlace de seguimiento para el cliente */}
+        {/* 🔥 Enlace seguimiento */}
         <section className="rounded-lg border border-emerald-700 bg-emerald-950/40 p-4 space-y-3">
           <h2 className="text-sm font-semibold text-emerald-200">
             Enlace de seguimiento para el cliente
           </h2>
           <p className="text-xs text-emerald-200/80">
-            Copia este enlace y envíaselo al cliente. Desde ahí podrá consultar
-            el estado del expediente sin necesidad de usuario ni contraseña.
+            Copia este enlace y envíaselo al cliente.
           </p>
           <div className="bg-slate-950 border border-emerald-700/70 rounded-md px-3 py-2 text-xs break-all text-emerald-100">
             {trackingUrl}
