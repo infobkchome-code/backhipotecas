@@ -1,5 +1,5 @@
 import React from "react";
-import { createClient } from "@/lib/supabase/server";
+import { supabase } from "@/lib/supabaseClient";
 
 interface SeguimientoPageProps {
   params: { token: string };
@@ -8,7 +8,6 @@ interface SeguimientoPageProps {
 export default async function SeguimientoPage({ params }: SeguimientoPageProps) {
   const { token } = params;
 
-  const supabase = createClient();
 
   const { data, error } = await supabase
     .from("casos")
