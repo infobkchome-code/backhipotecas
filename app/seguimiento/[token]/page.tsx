@@ -8,7 +8,7 @@ interface SeguimientoPageProps {
 export default async function SeguimientoPage({ params }: SeguimientoPageProps) {
   const { token } = params;
 
-
+  // Consultamos el expediente por el seguimiento_token
   const { data, error } = await supabase
     .from("casos")
     .select("*")
@@ -26,7 +26,7 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
             Seguimiento de tu expediente hipotecario
           </h1>
           <p className="text-sm text-slate-400">
-            BKC Hipotecas · Enlace de seguimiento
+            BKC Hipotecas · Enlace de seguimiento (VERSIÓN NUEVA)
           </p>
         </div>
         <div className="text-xs text-slate-400 text-right">
@@ -73,7 +73,7 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
               </p>
             </section>
 
-            {/* Bloque de debug para ver qué devuelve la BD, luego lo podemos quitar */}
+            {/* DEBUG: quita esto cuando comprobemos que todo va bien */}
             <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6">
               <h3 className="text-base font-semibold mb-2">
                 Datos completos del expediente (debug)
