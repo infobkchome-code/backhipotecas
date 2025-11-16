@@ -87,10 +87,19 @@ export default function NewClientPage() {
 
       // 5️⃣ Todo OK → volvemos al panel
       router.push('/portal');
-    } catch (err) {
-      console.error('Error inesperado creando cliente:', err);
-      setError('Ha ocurrido un error inesperado.');
-      setLoading(false);
+      } catch (err: any) {
+    console.error('Error inesperado creando cliente:', err);
+
+    const msg =
+      typeof err === 'string'
+        ? err
+        : err?.message
+        ? err.message
+        : JSON.stringify(err);
+
+    setError(`Error inesperado: ${msg}`);
+    setLoading(false);
+  }
     }
   };
 
