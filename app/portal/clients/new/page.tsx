@@ -50,9 +50,11 @@ export default function NewClientPage() {
         .select('id, nombre, email')
         .single();
 
-      if (cliError || !cliente) {
-        console.error('Error creando cliente:', cliError);
-        setError('No se ha podido crear el cliente.');
+           if (casoError) {
+        console.error('Error creando caso:', casoError);
+        setError(
+          `Error creando expediente: ${casoError.message ?? 'sin detalle'}`,
+        );
         setLoading(false);
         return;
       }
