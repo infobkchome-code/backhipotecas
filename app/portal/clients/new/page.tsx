@@ -16,142 +16,156 @@ export default function NewClientPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    if (!nombre.trim() || !email.trim()) {
+      setError('Nombre y email son obligatorios.');
+      return;
+    }
+
     setLoading(true);
 
-    // 1) Usuario autenticado
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    try {
+      // 1️⃣ Conseguimos el usuario logueado
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-    if (authError) {
-      setError('Error al obtener el usuario autenticado.');
-      setLoading(false);
-      return;
-    }
+      if (userError || !user) {
+        console.error(userError ?? 'Usuario no autenticado');
+        setError('Debes iniciar sesión para crear clientes.');
+        setLoading(false);
+        return;
+      }
 
-    if (!user) {
-      setError('Usuario no autenticado.');
-      setLoading(false);
-      return;
-    }
-
-    // 2) Insertar cliente con user_id = user.id
-    const { data: cliente, error: insertError } = await supabase
-      .from('clientes')
-      .insert([
-        {
-          user_id: user.id,                // 👈 CLAVE PARA PASAR LA RLS
+      // 2️⃣ Creamos el cliente en la tabla "clientes"
+      const { data: cliente, error: cliError } = await supabase
+        .from('clientes')
+        .insert({
+          user_id: user.id,
           nombre: nombre.trim(),
           email: email.trim(),
           telefono: telefono.trim() || null,
-        },
-      ])
-      .select()
-      .single();
+        })
+        .select('id, nombre, email')
+        .single();
 
-    if (insertError || !cliente) {
-      console.error(insertError);
-      setError(insertError?.message || 'No se pudo crear el cliente.');
-      setLoading(false);
-      return;
-    }
+      if (cliError || !cliente) {
+        console.error('Error creando cliente:', cliError);
+        setError('No se ha podido crear el cliente.');
+        setLoading(false);
+        return;
+      }
 
-    // 3) Crear caso inicial para este cliente (opcional, pero útil)
-    const { error: casoError } = await supabase.from('casos').insert([
-      {
+      // 3️⃣ Generamos tokens para el expediente
+      const seguimientoToken = crypto.randomUUID();
+      const publicToken = crypto.randomUUID();
+
+      // 4️⃣ Creamos un expediente inicial en la tabla "casos"
+      const { error: casoError } = await supabase.from('casos').insert({
         user_id: user.id,
-        cliente_id: cliente.id,
+        client_id: cliente.id,
         titulo: `Expediente ${cliente.nombre}`,
         estado: 'en_estudio',
         progreso: 0,
         notas: 'Expediente creado automáticamente.',
-      },
-    ]);
+        email: cliente.email,
+        public_token: publicToken,
+        seguimiento_token: seguimientoToken,
+      });
 
-    if (casoError) {
-      console.error(casoError);
-      // No bloqueamos al usuario, solo avisar si quieres
+      if (casoError) {
+        console.error('Error creando caso:', casoError);
+        setError(
+          'El cliente se ha creado, pero ha fallado la creación del expediente.',
+        );
+        setLoading(false);
+        return;
+      }
+
+      // 5️⃣ Todo OK → volvemos al panel
+      router.push('/portal');
+    } catch (err) {
+      console.error('Error inesperado creando cliente:', err);
+      setError('Ha ocurrido un error inesperado.');
+      setLoading(false);
     }
-
-    setLoading(false);
-
-    // 4) Volver al panel principal
-    router.push('/portal');
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
-      <div className="max-w-lg w-full space-y-6">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-emerald-400">
-            Panel hipotecas BKC
-          </p>
-          <h1 className="text-2xl font-semibold mt-1">Nuevo cliente</h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Crea un cliente para hacer el seguimiento de su hipoteca (casos, documentos, mensajes…).
-          </p>
-        </div>
+    <div className="min-h-screen bg-slate-950 text-slate-50">
+      <header className="border-b border-slate-800 px-6 py-4">
+        <h1 className="text-xl font-semibold">Nuevo cliente</h1>
+        <p className="text-xs text-slate-400">
+          Crea un cliente y automáticamente se generará su expediente
+          hipotecario con enlace de seguimiento.
+        </p>
+      </header>
 
-        <form onSubmit={handleSubmit} className="space-y-4 bg-slate-900/60 border border-slate-800 rounded-2xl p-6">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-200">
-              Nombre completo
-            </label>
-            <input
-              type="text"
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              required
-              className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-              placeholder="Ej. Juan Pérez"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-200">
-              Email
-            </label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-              placeholder="cliente@correo.com"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-200">
-              Teléfono
-            </label>
-            <input
-              type="tel"
-              value={telefono}
-              onChange={(e) => setTelefono(e.target.value)}
-              className="w-full rounded-lg bg-slate-950 border border-slate-700 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-              placeholder="Ej. 600123123"
-            />
-          </div>
-
+      <main className="px-6 py-6 flex justify-center">
+        <div className="w-full max-w-md bg-slate-900/60 border border-slate-800 rounded-xl p-6 space-y-4">
           {error && (
-            <div className="rounded-lg bg-red-950/50 border border-red-600/60 px-3 py-2 text-xs text-red-200">
+            <div className="rounded-md border border-red-700 bg-red-950/50 px-4 py-2 text-sm text-red-100">
               {error}
             </div>
           )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full inline-flex items-center justify-center rounded-lg bg-emerald-500 text-slate-950 text-sm font-semibold py-2.5 hover:bg-emerald-400 transition disabled:opacity-60"
-          >
-            {loading ? 'Creando cliente…' : 'Crear cliente'}
-          </button>
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">
+                Nombre completo
+              </label>
+              <input
+                type="text"
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="Ej.: Juan Pérez"
+              />
+            </div>
 
-          <p className="text-[11px] text-slate-500 text-center">
-            Los datos se guardan en Supabase en la tabla <span className="font-mono">clientes</span>, 
-            asociados a tu usuario de BKC (<span className="font-mono">auth.users</span>).
-          </p>
-        </form>
-      </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">
+                Email
+              </label>
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="cliente@correo.com"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">
+                Teléfono (opcional)
+              </label>
+              <input
+                type="tel"
+                value={telefono}
+                onChange={(e) => setTelefono(e.target.value)}
+                className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                placeholder="+34 ..."
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full inline-flex items-center justify-center rounded-md bg-emerald-500 text-slate-950 text-sm font-semibold py-2.5 hover:bg-emerald-400 transition disabled:opacity-60"
+            >
+              {loading ? 'Creando cliente…' : 'Crear cliente'}
+            </button>
+
+            <p className="text-[11px] text-slate-500 text-center">
+              Los datos se guardan en Supabase en la tabla{' '}
+              <span className="font-mono">clientes</span> y se crea un
+              expediente en la tabla <span className="font-mono">casos</span>.
+            </p>
+          </form>
+        </div>
+      </main>
     </div>
   );
 }
