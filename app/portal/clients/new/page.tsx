@@ -25,7 +25,7 @@ export default function NewClientPage() {
     setLoading(true);
 
     try {
-      // 1️⃣ Conseguimos el usuario logueado
+      // 1️⃣ Usuario autenticado
       const {
         data: { user },
         error: userError,
@@ -34,10 +34,11 @@ export default function NewClientPage() {
       if (userError || !user) {
         console.error(userError ?? 'Usuario no autenticado');
         setError('Debes iniciar sesión para crear clientes.');
+        setLoading(false);
         return;
       }
 
-      // 2️⃣ Creamos el cliente en la tabla "clientes"
+      // 2️⃣ Crear cliente
       const { data: cliente, error: cliError } = await supabase
         .from('clientes')
         .insert({
@@ -49,21 +50,20 @@ export default function NewClientPage() {
         .select('id, nombre, email')
         .single();
 
-      if (cliError || !cliente) {
-        console.error('Error creando cliente:', cliError);
-        setError('No se ha podido crear el cliente. Inténtalo de nuevo.');
+      if (cliError) {
+        setError(`Error creando cliente: ${cliError.message}`);
+        setLoading(false);
         return;
       }
 
-      // 3️⃣ Generamos tokens para el expediente
+      // 3️⃣ Tokens
       const seguimientoToken = crypto.randomUUID();
       const publicToken = crypto.randomUUID();
 
-      // 4️⃣ Creamos un expediente inicial en la tabla "casos"
+      // 4️⃣ Crear expediente
       const { error: casoError } = await supabase.from('casos').insert({
         user_id: user.id,
-        // OJO: usa "cliente_id" según tu esquema de Supabase
-        cliente_id: cliente.id,
+        client_id: cliente.id,
         titulo: `Expediente ${cliente.nombre}`,
         estado: 'en_estudio',
         progreso: 0,
@@ -76,13 +76,15 @@ export default function NewClientPage() {
       if (casoError) {
         console.error('Error creando caso:', casoError);
         setError(
-          'El cliente se ha creado, pero ha fallado la creación del expediente.',
+          'El cliente se ha creado, pero ha fallado la creación del expediente.'
         );
+        setLoading(false);
         return;
       }
 
-      // 5️⃣ Todo OK → volvemos al panel
+      // 5️⃣ Ir al panel principal
       router.push('/portal');
+
     } catch (err: any) {
       console.error('Error inesperado creando cliente:', err);
 
@@ -91,10 +93,9 @@ export default function NewClientPage() {
           ? err
           : err?.message
           ? err.message
-          : 'Error desconocido';
+          : JSON.stringify(err);
 
       setError(`Error inesperado: ${msg}`);
-    } finally {
       setLoading(false);
     }
   };
