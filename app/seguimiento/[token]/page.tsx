@@ -1,5 +1,5 @@
 import React from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { createClient } from "@/lib/supabase/server";
 
 interface SeguimientoPageProps {
   params: { token: string };
@@ -29,21 +29,24 @@ function getEstadoLabel(value: string | null | undefined) {
 export default async function SeguimientoPage({ params }: SeguimientoPageProps) {
   const { token } = params;
 
+  const supabase = createClient();
+
   const { data, error } = await supabase
     .from("casos")
     .select("*")
     .eq("seguimiento_token", token)
     .single();
 
-  // Si el token NO existe o hay error → pantalla de enlace no válido
+  // ❌ Token incorrecto o no existe
   if (error || !data) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-6">
         <div className="max-w-lg bg-red-950/40 border border-red-800 rounded-xl p-6 space-y-3">
           <h1 className="text-lg font-semibold">Enlace de seguimiento no válido</h1>
           <p className="text-sm text-red-100">
-            No hemos encontrado ningún expediente asociado a este enlace. Es posible
-            que haya caducado o que se haya escrito de forma incorrecta.
+            No hemos encontrado ningún expediente asociado a este enlace. Es
+            posible que haya caducado o que se haya escrito de forma
+            incorrecta.
           </p>
         </div>
       </div>
@@ -83,7 +86,7 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
       </header>
 
       <main className="max-w-3xl mx-auto px-6 py-8 space-y-8">
-        {/* Bloque principal de estado */}
+        {/* 🟢 Bloque principal de estado */}
         <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 space-y-4">
           <h2 className="text-lg font-semibold">Estado del expediente</h2>
 
@@ -120,9 +123,9 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
           </div>
 
           <p className="text-sm text-slate-400">
-            En estos momentos estamos procesando tu documentación. A medida que tu
-            expediente avance, aquí verás reflejadas las distintas fases: estudio,
-            tasación, FEIN/FIAE y firma en notaría.
+            En estos momentos estamos procesando tu documentación. A medida que
+            tu expediente avance, aquí verás reflejadas las distintas fases:
+            estudio, tasación, FEIN/FIAE y firma en notaría.
           </p>
 
           {expediente.notas && (
@@ -137,14 +140,15 @@ export default async function SeguimientoPage({ params }: SeguimientoPageProps) 
           )}
         </section>
 
-        {/* Bloque de contacto */}
+        {/* 📞 Bloque de contacto */}
         <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6">
           <h3 className="text-base font-semibold mb-2">
             ¿Alguna duda sobre tu hipoteca?
           </h3>
           <p className="text-sm text-slate-300 mb-3">
-            Si tienes cualquier consulta, puedes escribirnos indicando este código
-            de seguimiento y uno de nuestros asesores de BKC Hipotecas te ayudará.
+            Si tienes cualquier consulta, puedes escribirnos indicando este
+            código de seguimiento y uno de nuestros asesores de BKC Hipotecas
+            te ayudará.
           </p>
           <ul className="text-sm text-slate-300 space-y-1">
             <li>
