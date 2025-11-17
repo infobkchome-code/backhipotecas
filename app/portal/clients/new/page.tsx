@@ -149,13 +149,22 @@ export default function NewClientPage() {
               />
             </div>
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full inline-flex items-center justify-center rounded-md bg-emerald-500 text-slate-950 text-sm font-semibold py-2.5 hover:bg-emerald-400 transition disabled:opacity-60"
-            >
-              {loading ? 'Creando cliente…' : 'Crear cliente'}
-            </button>
+           <header className="border-b border-slate-800 px-6 py-4">
+  <h1 className="text-xl font-semibold">Nuevo cliente</h1>
+  <p className="text-xs text-slate-400">
+    Crea un cliente y automáticamente se generará su expediente hipotecario con enlace de seguimiento.
+  </p>
+</header>
+
+<button
+  type="button"
+  onClick={() => router.back()}
+  className="ml-6 mt-4 text-sm text-slate-400 hover:text-slate-200 transition"
+>
+  ← Volver atrás
+</button>
+
+<main className="px-6 py-6 flex justify-center">
 
             <p className="text-[11px] text-slate-500 text-center">
               Los datos se guardan en Supabase en la tabla{' '}
