@@ -50,10 +50,12 @@ export default function NewClientPage() {
         .select('id, nombre, email')
         .single();
 
-           if (casoError) {
-        console.error('Error creando caso:', casoError);
+      if (cliError || !cliente) {
+        console.error('Error creando cliente:', cliError);
         setError(
-          `Error creando expediente: ${casoError.message ?? 'sin detalle'}`,
+          `Error creando cliente: ${
+            cliError?.message ?? 'no se ha podido crear el cliente'
+          }`,
         );
         setLoading(false);
         return;
@@ -66,7 +68,7 @@ export default function NewClientPage() {
       // 4️⃣ Creamos un expediente inicial en la tabla "casos"
       const { error: casoError } = await supabase.from('casos').insert({
         user_id: user.id,
-        client_id: cliente.id,
+        client_id: cliente.id, // si en tu tabla es "cliente_id", cámbialo aquí
         titulo: `Expediente ${cliente.nombre}`,
         estado: 'en_estudio',
         progreso: 0,
@@ -87,19 +89,18 @@ export default function NewClientPage() {
 
       // 5️⃣ Todo OK → volvemos al panel
       router.push('/portal');
-      } catch (err: any) {
-    console.error('Error inesperado creando cliente:', err);
+    } catch (err: any) {
+      console.error('Error inesperado creando cliente:', err);
 
-    const msg =
-      typeof err === 'string'
-        ? err
-        : err?.message
-        ? err.message
-        : JSON.stringify(err);
+      const msg =
+        typeof err === 'string'
+          ? err
+          : err?.message
+          ? err.message
+          : JSON.stringify(err);
 
-    setError(`Error inesperado: ${msg}`);
-    setLoading(false);
-  }
+      setError(`Error inesperado: ${msg}`);
+      setLoading(false);
     }
   };
 
