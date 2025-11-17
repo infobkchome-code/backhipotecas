@@ -1,24 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
-
-type ApiResponse = {
-  ok: boolean;
-  message?: string;
-  cliente?: {
-    id: string;
-    nombre?: string | null;
-    email?: string | null;
-  };
-  caso?: {
-    id: string;
-    titulo?: string | null;
-    estado?: string | null;
-    progreso?: number | null;
-  };
-  seguimiento_url?: string;
-};
 
 export default function NewClientPage() {
   const router = useRouter();
@@ -29,7 +12,7 @@ export default function NewClientPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setError(null);
 
@@ -41,6 +24,7 @@ export default function NewClientPage() {
     setLoading(true);
 
     try {
+      // 🔹 Llamamos a la API del portal que crea cliente + expediente
       const res = await fetch('/api/portal/create', {
         method: 'POST',
         headers: {
@@ -53,45 +37,53 @@ export default function NewClientPage() {
         }),
       });
 
-      const data: ApiResponse = await res.json();
-
-      if (!res.ok || !data.ok) {
-        const msg =
-          data.message ||
+      if (!res.ok) {
+        let message =
           'No se ha podido crear el cliente y el expediente. Inténtalo de nuevo.';
-        setError(msg);
-        setLoading(false);
+
+        try {
+          const data = await res.json();
+          if (data?.error) message = data.error;
+          if (data?.details) message = data.details;
+        } catch {
+          // ignoramos errores al parsear JSON
+        }
+
+        setError(message);
         return;
       }
 
-      // Si tenemos el ID del expediente, vamos directamente a su ficha interna
-      if (data.caso?.id) {
-        router.push(`/portal/case/${data.caso.id}`);
-      } else {
-        // Fallback: volvemos al panel si por lo que sea no viene el caso
-        router.push('/portal');
-      }
-    } catch (err: any) {
-      console.error('Error inesperado creando cliente:', err);
-      const msg =
-        typeof err === 'string'
-          ? err
-          : err?.message
-          ? err.message
-          : JSON.stringify(err);
-      setError(`Error inesperado: ${msg}`);
+      // ✅ Todo OK → volvemos al panel
+      router.push('/portal');
+    } catch (err) {
+      console.error('Error llamando a /api/portal/create', err);
+      setError(
+        'Error de red creando el cliente. Revisa tu conexión e inténtalo de nuevo.'
+      );
+    } finally {
       setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
-      <header className="border-b border-slate-800 px-6 py-4">
-        <h1 className="text-xl font-semibold">Nuevo cliente</h1>
-        <p className="text-xs text-slate-400">
-          Crea un cliente y automáticamente se generará su expediente
-          hipotecario con enlace de seguimiento.
-        </p>
+      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">Nuevo cliente</h1>
+          <p className="text-xs text-slate-400">
+            Crea un cliente y automáticamente se generará su expediente
+            hipotecario con enlace de seguimiento.
+          </p>
+        </div>
+
+        {/* 🔙 Botón para volver al panel */}
+        <button
+          type="button"
+          onClick={() => router.push('/portal')}
+          className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 transition"
+        >
+          ← Volver al panel
+        </button>
       </header>
 
       <main className="px-6 py-6 flex justify-center">
