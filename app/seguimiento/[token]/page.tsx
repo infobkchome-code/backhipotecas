@@ -1,167 +1,170 @@
-import React from "react";
-import { createClient } from "@/lib/supabase/server";
+'use client';
 
-interface SeguimientoPageProps {
+import { useEffect, useState } from 'react';
+
+type Expediente = {
+  id: string;
+  user_id?: string;
+  cliente_id?: string;
+  titulo?: string;
+  estado?: string; // 'documentacion' | 'analisis' | 'tasacion' | 'notaria' | ...
+  progreso?: number; // 0-100
+  notas?: string;
+  created_at?: string;
+  updated_at?: string;
+  email?: string | null;
+  public_token?: string;
+  seguimiento_token?: string;
+};
+
+type ApiResponse =
+  | { ok: boolean; expediente?: Expediente; data?: Expediente; caso?: Expediente; message?: string }
+  | Expediente;
+
+interface PageProps {
   params: { token: string };
 }
 
-function getEstadoLabel(value: string | null | undefined) {
-  switch (value) {
-    case "en_estudio":
-      return "En estudio";
-    case "tasacion":
-      return "Tasación";
-    case "fein":
-      return "FEIN / Oferta vinculante";
-    case "notaria":
-      return "Notaría";
-    case "compraventa":
-      return "Firma compraventa";
-    case "fin":
-      return "Expediente finalizado";
-    case "denegado":
-      return "Denegado";
-    default:
-      return "En estudio";
-  }
+const STEPS = [
+  { id: 'documentacion', label: 'Documentación' },
+  { id: 'analisis', label: 'Análisis' },
+  { id: 'tasacion', label: 'Tasación' },
+  { id: 'notaria', label: 'Firma en notaría' },
+];
+
+function normalizarEstado(estado?: string | null): string {
+  if (!estado) return '';
+  return estado.toLowerCase().trim();
 }
 
-export default async function SeguimientoPage({ params }: SeguimientoPageProps) {
+function getEstadoDescripcion(estado: string) {
+  const e = normalizarEstado(estado);
+
+  if (e === 'documentacion')
+    return 'Estamos recopilando y revisando toda la documentación necesaria para tu hipoteca.';
+  if (e === 'analisis')
+    return 'Nuestro equipo está analizando tu operación y las diferentes opciones de financiación.';
+  if (e === 'tasacion')
+    return 'La vivienda se encuentra en fase de tasación por parte de una sociedad homologada.';
+  if (e === 'notaria' || e === 'firma')
+    return 'Tu hipoteca está lista para la firma en notaría. Pronto nos pondremos en contacto contigo para cerrar fecha y hora.';
+
+  return 'Estamos trabajando en tu expediente. En breve verás aquí el detalle actualizado de cada fase.';
+}
+
+function getProgreso(expediente: Expediente | null): number {
+  if (!expediente) return 0;
+  if (typeof expediente.progreso === 'number') return expediente.progreso;
+
+  const estado = normalizarEstado(expediente.estado);
+  if (!estado) return 10;
+
+  if (estado === 'documentacion') return 20;
+  if (estado === 'analisis') return 45;
+  if (estado === 'tasacion') return 70;
+  if (estado === 'notaria' || estado === 'firma') return 95;
+
+  return 10;
+}
+
+export default function SeguimientoPage({ params }: PageProps) {
   const { token } = params;
 
-  const supabase = createClient();
+  const [expediente, setExpediente] = useState<Expediente | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
 
-  const { data, error } = await supabase
-    .from("casos")
-    .select("*")
-    .eq("seguimiento_token", token)
-    .single();
+  useEffect(() => {
+    let cancelado = false;
 
-  // ❌ Token incorrecto o no existe
-  if (error || !data) {
+    async function cargarExpediente() {
+      try {
+        setLoading(true);
+        setError(null);
+
+        const res = await fetch(`/api/seguimiento/${token}`, {
+          method: 'GET',
+          cache: 'no-store',
+        });
+
+        if (!res.ok) {
+          throw new Error('No hemos encontrado ningún expediente asociado a este enlace.');
+        }
+
+        const json: ApiResponse = await res.json();
+
+        // Intentamos localizar la propiedad que contiene el expediente
+        const e =
+          (json as any).expediente ||
+          (json as any).data ||
+          (json as any).caso ||
+          (json as any);
+
+        if (!e || typeof e !== 'object') {
+          throw new Error('No hemos podido cargar los datos del expediente.');
+        }
+
+        if (!cancelado) {
+          setExpediente(e as Expediente);
+        }
+      } catch (err: any) {
+        console.error(err);
+        if (!cancelado) {
+          setError(
+            err?.message ||
+              'Ha ocurrido un error al cargar el expediente. Por favor, revisa el enlace o contacta con nosotros.'
+          );
+        }
+      } finally {
+        if (!cancelado) setLoading(false);
+      }
+    }
+
+    cargarExpediente();
+
+    return () => {
+      cancelado = true;
+    };
+  }, [token]);
+
+  const progreso = getProgreso(expediente);
+  const estadoNormalizado = normalizarEstado(expediente?.estado);
+  const currentStepIndex =
+    STEPS.findIndex((s) => s.id === estadoNormalizado) !== -1
+      ? STEPS.findIndex((s) => s.id === estadoNormalizado)
+      : Math.min(
+          3,
+          Math.floor((progreso / 100) * (STEPS.length === 0 ? 1 : STEPS.length))
+        );
+
+  async function handleCopy() {
+    if (!expediente?.seguimiento_token) return;
+    try {
+      await navigator.clipboard.writeText(expediente.seguimiento_token);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  // ESTADOS DE CARGA / ERROR
+  if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-6">
-        <div className="max-w-lg bg-red-950/40 border border-red-800 rounded-xl p-6 space-y-3">
-          <h1 className="text-lg font-semibold">Enlace de seguimiento no válido</h1>
-          <p className="text-sm text-red-100">
-            No hemos encontrado ningún expediente asociado a este enlace. Es
-            posible que haya caducado o que se haya escrito de forma
-            incorrecta.
-          </p>
+      <main className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
+        <div className="max-w-md w-full px-6">
+          <div className="animate-pulse space-y-4">
+            <div className="h-4 bg-slate-800 rounded w-2/3" />
+            <div className="h-6 bg-slate-800 rounded w-full" />
+            <div className="h-24 bg-slate-900 rounded-xl" />
+          </div>
         </div>
-      </div>
+      </main>
     );
   }
 
-  const expediente: any = data;
-  const estadoLabel = getEstadoLabel(expediente.estado);
-
-  const progreso =
-    typeof expediente.progreso === "number" && !Number.isNaN(expediente.progreso)
-      ? Math.max(0, Math.min(100, expediente.progreso))
-      : 0;
-
-  const titular =
-    expediente.nombre ||
-    expediente.nombre_cliente ||
-    expediente.titular ||
-    null;
-
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-50">
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">
-            Seguimiento de tu expediente hipotecario
-          </h1>
-          <p className="text-sm text-slate-400">
-            BKC Hipotecas · Enlace de seguimiento
-          </p>
-        </div>
-        <div className="text-xs text-slate-400 text-right">
-          Código de seguimiento:
-          <br />
-          <span className="font-mono text-slate-100">{token}</span>
-        </div>
-      </header>
-
-      <main className="max-w-3xl mx-auto px-6 py-8 space-y-8">
-        {/* 🟢 Bloque principal de estado */}
-        <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 space-y-4">
-          <h2 className="text-lg font-semibold">Estado del expediente</h2>
-
-          {titular && (
-            <p className="text-sm text-slate-300">
-              <span className="font-semibold">Titular: </span>
-              {titular}
-            </p>
-          )}
-
-          {expediente.titulo && (
-            <p className="text-sm text-slate-300">
-              <span className="font-semibold">Expediente: </span>
-              {expediente.titulo}
-            </p>
-          )}
-
-          <p className="text-sm text-slate-300">
-            <span className="font-semibold">Estado actual: </span>
-            {estadoLabel}
-          </p>
-
-          <div className="space-y-2">
-            <p className="text-sm text-slate-300">
-              <span className="font-semibold">Progreso aproximado: </span>
-              {progreso}%
-            </p>
-            <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-              <div
-                className="h-2 bg-emerald-500 transition-all"
-                style={{ width: `${progreso}%` }}
-              />
-            </div>
-          </div>
-
-          <p className="text-sm text-slate-400">
-            En estos momentos estamos procesando tu documentación. A medida que
-            tu expediente avance, aquí verás reflejadas las distintas fases:
-            estudio, tasación, FEIN/FIAE y firma en notaría.
-          </p>
-
-          {expediente.notas && (
-            <div className="mt-3 border border-slate-800 rounded-lg bg-slate-950/60 p-3">
-              <p className="text-xs font-semibold text-slate-300 mb-1">
-                Comentarios del equipo de BKC
-              </p>
-              <p className="text-xs text-slate-300 whitespace-pre-line">
-                {expediente.notas}
-              </p>
-            </div>
-          )}
-        </section>
-
-        {/* 📞 Bloque de contacto */}
-        <section className="bg-slate-900/60 border border-slate-800 rounded-xl p-6">
-          <h3 className="text-base font-semibold mb-2">
-            ¿Alguna duda sobre tu hipoteca?
-          </h3>
-          <p className="text-sm text-slate-300 mb-3">
-            Si tienes cualquier consulta, puedes escribirnos indicando este
-            código de seguimiento y uno de nuestros asesores de BKC Hipotecas
-            te ayudará.
-          </p>
-          <ul className="text-sm text-slate-300 space-y-1">
-            <li>
-              📧 Email:{" "}
-              <span className="font-medium">hipotecas@bkchome.es</span>
-            </li>
-            <li>
-              📞 Teléfono:{" "}
-              <span className="font-medium">(+34) 617 476 695</span>
-            </li>
-          </ul>
-        </section>
-      </main>
-    </div>
-  );
-}
+  if (error || !expediente) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
+        <div className="max-w-lg w-full px-6 text-center space-y-6">
