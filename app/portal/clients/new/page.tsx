@@ -34,7 +34,6 @@ export default function NewClientPage() {
       if (userError || !user) {
         console.error(userError ?? 'Usuario no autenticado');
         setError('Debes iniciar sesión para crear clientes.');
-        setLoading(false);
         return;
       }
 
@@ -52,12 +51,7 @@ export default function NewClientPage() {
 
       if (cliError || !cliente) {
         console.error('Error creando cliente:', cliError);
-        setError(
-          `Error creando cliente: ${
-            cliError?.message ?? 'no se ha podido crear el cliente'
-          }`,
-        );
-        setLoading(false);
+        setError('No se ha podido crear el cliente. Inténtalo de nuevo.');
         return;
       }
 
@@ -68,7 +62,8 @@ export default function NewClientPage() {
       // 4️⃣ Creamos un expediente inicial en la tabla "casos"
       const { error: casoError } = await supabase.from('casos').insert({
         user_id: user.id,
-        client_id: cliente.id, // si en tu tabla es "cliente_id", cámbialo aquí
+        // OJO: usa "cliente_id" según tu esquema de Supabase
+        cliente_id: cliente.id,
         titulo: `Expediente ${cliente.nombre}`,
         estado: 'en_estudio',
         progreso: 0,
@@ -83,7 +78,6 @@ export default function NewClientPage() {
         setError(
           'El cliente se ha creado, pero ha fallado la creación del expediente.',
         );
-        setLoading(false);
         return;
       }
 
@@ -97,9 +91,10 @@ export default function NewClientPage() {
           ? err
           : err?.message
           ? err.message
-          : JSON.stringify(err);
+          : 'Error desconocido';
 
       setError(`Error inesperado: ${msg}`);
+    } finally {
       setLoading(false);
     }
   };
