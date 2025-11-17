@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function NewClientPage() {
   const router = useRouter();
@@ -12,7 +13,7 @@ export default function NewClientPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -24,66 +25,80 @@ export default function NewClientPage() {
     setLoading(true);
 
     try {
-      // 🔹 Llamamos a la API del portal que crea cliente + expediente
-      const res = await fetch('/api/portal/create', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          nombre: nombre.trim(),
-          email: email.trim(),
-          telefono: telefono.trim() || null,
-        }),
-      });
+      // 1️⃣ Conseguimos el usuario logueado
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
 
-      if (!res.ok) {
-        let message =
-          'No se ha podido crear el cliente y el expediente. Inténtalo de nuevo.';
-
-        try {
-          const data = await res.json();
-          if (data?.error) message = data.error;
-          if (data?.details) message = data.details;
-        } catch {
-          // ignoramos errores al parsear JSON
-        }
-
-        setError(message);
+      if (userError || !user) {
+        setError('Debes iniciar sesión para crear clientes.');
+        setLoading(false);
         return;
       }
 
-      // ✅ Todo OK → volvemos al panel
+      // 2️⃣ Creamos el cliente en la tabla "clientes"
+      const { data: cliente, error: cliError } = await supabase
+        .from('clientes')
+        .insert({
+          userId: user.id, // 👈 CORREGIDO
+          nombre: nombre.trim(),
+          email: email.trim(),
+          telefono: telefono.trim() || null,
+        })
+        .select('id, nombre, email')
+        .single();
+
+      if (cliError) {
+        console.error(cliError);
+        setError('No se ha podido crear el cliente.');
+        setLoading(false);
+        return;
+      }
+
+      // 3️⃣ Generamos tokens para el expediente
+      const seguimientoToken = crypto.randomUUID();
+      const publicToken = crypto.randomUUID();
+
+      // 4️⃣ Creamos un expediente inicial en la tabla "casos"
+      const { error: casoError } = await supabase.from('casos').insert({
+        userId: user.id, // 👈 CORREGIDO
+        client_id: cliente.id,
+        titulo: `Expediente ${cliente.nombre}`,
+        estado: 'en_estudio',
+        progreso: 0,
+        notas: 'Expediente creado automáticamente.',
+        email: cliente.email,
+        public_token: publicToken,
+        seguimiento_token: seguimientoToken,
+      });
+
+      if (casoError) {
+        console.error(casoError);
+        setError(
+          'El cliente se ha creado, pero ha fallado la creación del expediente.',
+        );
+        setLoading(false);
+        return;
+      }
+
+      // 5️⃣ Todo OK → volvemos al panel
       router.push('/portal');
-    } catch (err) {
-      console.error('Error llamando a /api/portal/create', err);
-      setError(
-        'Error de red creando el cliente. Revisa tu conexión e inténtalo de nuevo.'
-      );
-    } finally {
+    } catch (err: any) {
+      console.error(err);
+      setError('Error inesperado creando cliente.');
       setLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold">Nuevo cliente</h1>
-          <p className="text-xs text-slate-400">
-            Crea un cliente y automáticamente se generará su expediente
-            hipotecario con enlace de seguimiento.
-          </p>
-        </div>
-
-        {/* 🔙 Botón para volver al panel */}
-        <button
-          type="button"
-          onClick={() => router.push('/portal')}
-          className="rounded-md border border-slate-700 px-3 py-1.5 text-xs text-slate-200 hover:bg-slate-800 transition"
-        >
-          ← Volver al panel
-        </button>
+      <header className="border-b border-slate-800 px-6 py-4">
+        <h1 className="text-xl font-semibold">Nuevo cliente</h1>
+        <p className="text-xs text-slate-400">
+          Crea un cliente y automáticamente se generará su expediente
+          hipotecario con enlace de seguimiento.
+        </p>
       </header>
 
       <main className="px-6 py-6 flex justify-center">
