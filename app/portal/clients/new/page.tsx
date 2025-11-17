@@ -2,7 +2,23 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
+
+type ApiResponse = {
+  ok: boolean;
+  message?: string;
+  cliente?: {
+    id: string;
+    nombre?: string | null;
+    email?: string | null;
+  };
+  caso?: {
+    id: string;
+    titulo?: string | null;
+    estado?: string | null;
+    progreso?: number | null;
+  };
+  seguimiento_url?: string;
+};
 
 export default function NewClientPage() {
   const router = useRouter();
@@ -25,76 +41,44 @@ export default function NewClientPage() {
     setLoading(true);
 
     try {
-      // 1️⃣ Usuario autenticado
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        console.error(userError ?? 'Usuario no autenticado');
-        setError('Debes iniciar sesión para crear clientes.');
-        setLoading(false);
-        return;
-      }
-
-      // 2️⃣ Crear cliente
-      const { data: cliente, error: cliError } = await supabase
-        .from('clientes')
-        .insert({
-          user_id: user.id,
+      const res = await fetch('/api/portal/create', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
           nombre: nombre.trim(),
           email: email.trim(),
           telefono: telefono.trim() || null,
-        })
-        .select('id, nombre, email')
-        .single();
-
-      if (cliError) {
-        setError(`Error creando cliente: ${cliError.message}`);
-        setLoading(false);
-        return;
-      }
-
-      // 3️⃣ Tokens
-      const seguimientoToken = crypto.randomUUID();
-      const publicToken = crypto.randomUUID();
-
-      // 4️⃣ Crear expediente
-      const { error: casoError } = await supabase.from('casos').insert({
-        user_id: user.id,
-        client_id: cliente.id,
-        titulo: `Expediente ${cliente.nombre}`,
-        estado: 'en_estudio',
-        progreso: 0,
-        notas: 'Expediente creado automáticamente.',
-        email: cliente.email,
-        public_token: publicToken,
-        seguimiento_token: seguimientoToken,
+        }),
       });
 
-      if (casoError) {
-        console.error('Error creando caso:', casoError);
-        setError(
-          'El cliente se ha creado, pero ha fallado la creación del expediente.'
-        );
+      const data: ApiResponse = await res.json();
+
+      if (!res.ok || !data.ok) {
+        const msg =
+          data.message ||
+          'No se ha podido crear el cliente y el expediente. Inténtalo de nuevo.';
+        setError(msg);
         setLoading(false);
         return;
       }
 
-      // 5️⃣ Ir al panel principal
-      router.push('/portal');
-
+      // Si tenemos el ID del expediente, vamos directamente a su ficha interna
+      if (data.caso?.id) {
+        router.push(`/portal/case/${data.caso.id}`);
+      } else {
+        // Fallback: volvemos al panel si por lo que sea no viene el caso
+        router.push('/portal');
+      }
     } catch (err: any) {
       console.error('Error inesperado creando cliente:', err);
-
       const msg =
         typeof err === 'string'
           ? err
           : err?.message
           ? err.message
           : JSON.stringify(err);
-
       setError(`Error inesperado: ${msg}`);
       setLoading(false);
     }
