@@ -32,11 +32,26 @@ const STEPS = [
   { id: 'notaria', label: 'Firma en notaría' },
 ];
 
+// Normalizamos y mapeamos estados del backend a estados estándar
 function normalizarEstado(estado?: string | null): string {
   if (!estado) return '';
-  return estado.toLowerCase().trim();
+
+  // Pasamos a minúsculas, quitamos tildes y convertimos espacios a guiones bajos
+  let e = estado
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, ''); // quita acentos
+
+  e = e.replace(/\s+/g, '_'); // "En estudio" -> "en_estudio"
+
+  // Mapeos específicos backend -> estándar
+  if (e === 'en_estudio' || e === 'estudio') return 'analisis';
+
+  return e;
 }
 
+// Texto descriptivo para el párrafo
 function getEstadoDescripcion(estado: string) {
   const e = normalizarEstado(estado);
 
@@ -52,6 +67,7 @@ function getEstadoDescripcion(estado: string) {
   return 'Estamos trabajando en tu expediente. En breve verás aquí el detalle actualizado de cada fase.';
 }
 
+// Porcentaje de progreso
 function getProgreso(expediente: Expediente | null): number {
   if (!expediente) return 0;
   if (typeof expediente.progreso === 'number') return expediente.progreso;
@@ -65,6 +81,22 @@ function getProgreso(expediente: Expediente | null): number {
   if (estado === 'notaria' || estado === 'firma') return 95;
 
   return 10;
+}
+
+// Texto que se muestra en el “chip” de estado
+function getEstadoChipText(estado?: string | null): string {
+  const e = normalizarEstado(estado);
+
+  if (e === 'documentacion') return 'Documentación';
+  if (e === 'analisis') return 'En estudio';
+  if (e === 'tasacion') return 'Tasación';
+  if (e === 'notaria' || e === 'firma') return 'Firma en notaría';
+
+  if (!estado) return 'En curso';
+
+  // Fallback: usamos el texto original pero bonito
+  const original = estado.replace(/_/g, ' ');
+  return original.charAt(0).toUpperCase() + original.slice(1);
 }
 
 export default function SeguimientoPage({ params }: PageProps) {
@@ -130,6 +162,8 @@ export default function SeguimientoPage({ params }: PageProps) {
 
   const progreso = getProgreso(expediente);
   const estadoNormalizado = normalizarEstado(expediente?.estado);
+  const estadoLabel = getEstadoChipText(expediente?.estado);
+
   const currentStepIndex =
     STEPS.findIndex((s) => s.id === estadoNormalizado) !== -1
       ? STEPS.findIndex((s) => s.id === estadoNormalizado)
@@ -223,19 +257,16 @@ export default function SeguimientoPage({ params }: PageProps) {
                 <h2 className="text-lg font-semibold">Estado del expediente</h2>
                 <p className="text-xs md:text-sm text-slate-400">
                   Titular:{' '}
-                  <span className="text-slate-100 font-medium">
-                    {expediente.titulo || 'Pendiente de asignar'}
-                  </span>
+                    <span className="text-slate-100 font-medium">
+                      {expediente.titulo || 'Pendiente de asignar'}
+                    </span>
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
                 <span className="text-xs text-slate-400">Estado actual:</span>
                 <span className="inline-flex items-center rounded-full bg-sky-600/20 px-3 py-1 text-xs font-medium text-sky-300">
-                  {estadoNormalizado
-                    ? estadoNormalizado.charAt(0).toUpperCase() +
-                      estadoNormalizado.slice(1)
-                    : 'En curso'}
+                  {estadoLabel}
                 </span>
               </div>
             </div>
