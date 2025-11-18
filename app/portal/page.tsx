@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { supabase } from '@/lib/supabaseClient';
 
 type Cliente = {
@@ -9,46 +9,43 @@ type Cliente = {
   nombre: string | null;
   email: string | null;
   telefono: string | null;
+  created_at: string;
 };
 
 type Caso = {
   id: string;
+  cliente_id: string;
   titulo: string | null;
   estado: string | null;
   progreso: number | null;
   notas: string | null;
-  created_at: string;
   seguimiento_token: string | null;
-  cliente: Cliente;
 };
 
-type EstadoFiltro = 'todos' | 'en_estudio' | 'cerrado';
+type Fila = {
+  cliente: Cliente;
+  caso: Caso | null;
+};
 
-function formatearFecha(fecha: string) {
-  try {
-    return new Date(fecha).toLocaleDateString('es-ES', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  } catch {
-    return fecha;
-  }
+type Tab = 'todos' | 'en_estudio' | 'cerrado';
+
+function formatearFecha(iso: string | null | undefined) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  return d.toLocaleDateString('es-ES');
 }
 
-function formatearEstado(estado: string | null) {
+function formatearEstado(estado: string | null | undefined) {
   if (!estado) return 'EN_ESTUDIO';
   return estado.toUpperCase();
 }
 
 export default function PortalPage() {
-  const router = useRouter();
-
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [casos, setCasos] = useState<Caso[]>([]);
-  const [estadoFiltro, setEstadoFiltro] = useState<EstadoFiltro>('todos');
-  const [search, setSearch] = useState('');
+  const [filas, setFilas] = useState<Fila[]>([]);
+  const [busqueda, setBusqueda] = useState('');
+  const [tab, setTab] = useState<Tab>('todos');
 
   useEffect(() => {
     const cargar = async () => {
@@ -64,59 +61,49 @@ export default function PortalPage() {
 
         if (userError || !user) {
           console.error(userError ?? 'Usuario no autenticado');
-          setError('Debes iniciar sesión para ver tus clientes y expedientes.');
+          setError('Debes iniciar sesión para ver tus clientes.');
           setLoading(false);
           return;
         }
 
-        // 2️⃣ Traer los casos con el cliente asociado
-        const { data, error: casosError } = await supabase
-          .from('casos')
-          .select(
-            `
-            id,
-            titulo,
-            estado,
-            progreso,
-            notas,
-            created_at,
-            seguimiento_token,
-            cliente:cliente_id (
-              id,
-              nombre,
-              email,
-              telefono
-            )
-          `
-          )
+        // 2️⃣ Clientes del usuario
+        const { data: clientes, error: cliError } = await supabase
+          .from('clientes')
+          .select('id, nombre, email, telefono, created_at')
           .eq('user_id', user.id)
           .order('created_at', { ascending: false });
 
-        if (casosError) {
-          console.error('Error cargando casos:', casosError);
+        if (cliError) {
+          console.error('Error cargando clientes:', cliError);
+          setError('No se han podido cargar los clientes.');
+          setLoading(false);
+          return;
+        }
+
+        // 3️⃣ Casos del usuario
+        const { data: casos, error: casoError } = await supabase
+          .from('casos')
+          .select(
+            'id, cliente_id, titulo, estado, progreso, notas, seguimiento_token'
+          )
+          .eq('user_id', user.id);
+
+        if (casoError) {
+          console.error('Error cargando casos:', casoError);
           setError('No se han podido cargar los expedientes.');
           setLoading(false);
           return;
         }
 
-        const normalizados: Caso[] =
-          (data as any[])?.map((row) => ({
-            id: row.id,
-            titulo: row.titulo,
-            estado: row.estado,
-            progreso: row.progreso,
-            notas: row.notas,
-            created_at: row.created_at,
-            seguimiento_token: row.seguimiento_token,
-            cliente: {
-              id: row.cliente?.id,
-              nombre: row.cliente?.nombre ?? '—',
-              email: row.cliente?.email ?? '—',
-              telefono: row.cliente?.telefono ?? null,
-            },
-          })) ?? [];
+        const mapaCasos = new Map<string, Caso>();
+        (casos ?? []).forEach((c) => mapaCasos.set(c.cliente_id, c as Caso));
 
-        setCasos(normalizados);
+        const filasCompletas: Fila[] = (clientes ?? []).map((cl) => ({
+          cliente: cl as Cliente,
+          caso: mapaCasos.get(cl.id) ?? null,
+        }));
+
+        setFilas(filasCompletas);
       } catch (err: any) {
         console.error('Error inesperado cargando portal:', err);
         const msg =
@@ -125,7 +112,7 @@ export default function PortalPage() {
             : err?.message
             ? err.message
             : JSON.stringify(err);
-        setError(`Ha ocurrido un error al cargar los datos: ${msg}`);
+        setError(`Ha ocurrido un error inesperado: ${msg}`);
       } finally {
         setLoading(false);
       }
@@ -134,234 +121,249 @@ export default function PortalPage() {
     cargar();
   }, []);
 
-  const casosFiltrados = useMemo(() => {
-    let resultado = [...casos];
+  const filasFiltradas = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
 
-    if (estadoFiltro !== 'todos') {
-      resultado = resultado.filter((c) =>
-        (c.estado ?? 'EN_ESTUDIO').toLowerCase().includes(estadoFiltro)
-      );
-    }
+    return filas.filter(({ cliente, caso }) => {
+      // 🔍 Búsqueda
+      if (q) {
+        const texto =
+          `${cliente.nombre ?? ''} ${cliente.email ?? ''} ${
+            cliente.telefono ?? ''
+          } ${caso?.titulo ?? ''}`.toLowerCase();
 
-    if (search.trim()) {
-      const q = search.trim().toLowerCase();
-      resultado = resultado.filter((c) => {
-        const nombre = c.cliente.nombre?.toLowerCase() ?? '';
-        const email = c.cliente.email?.toLowerCase() ?? '';
-        const telefono = c.cliente.telefono?.toLowerCase() ?? '';
-        const titulo = c.titulo?.toLowerCase() ?? '';
-        return (
-          nombre.includes(q) ||
-          email.includes(q) ||
-          telefono.includes(q) ||
-          titulo.includes(q)
-        );
-      });
-    }
+        if (!texto.includes(q)) return false;
+      }
 
-    return resultado;
-  }, [casos, estadoFiltro, search]);
+      // 🏷️ Filtro por estado
+      if (tab === 'en_estudio') {
+        const e = (caso?.estado ?? 'EN_ESTUDIO').toUpperCase();
+        return e === 'EN_ESTUDIO';
+      }
 
-  const irANuevoCliente = () => {
-    router.push('/portal/clients/new');
-  };
+      if (tab === 'cerrado') {
+        const e = (caso?.estado ?? '').toUpperCase();
+        return e.includes('CERRADO');
+      }
 
-  const irACaso = (id: string) => {
-    router.push(`/portal/case/${id}`);
-  };
-
-  const verComoCliente = (seguimientoToken: string | null) => {
-    if (!seguimientoToken) return;
-    // Siempre a la ruta pública de seguimiento
-    window.open(`/seguimiento/${seguimientoToken}`, '_blank');
-  };
+      // 'todos'
+      return true;
+    });
+  }, [filas, busqueda, tab]);
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
-      {/* Cabecera */}
-      <header className="border-b border-slate-900/70 bg-slate-950/90 backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.25em] text-emerald-400">
-              BKC Hipotecas · Panel interno
-            </p>
-            <h1 className="text-xl md:text-2xl font-semibold mt-1">
-              Clientes y expedientes <span className="text-xs text-slate-500">(PRUEBA)</span>
-            </h1>
-            <p className="text-xs text-slate-400 mt-1">
-              Desde aquí ves todos tus clientes, accedes al expediente y puedes ver lo mismo que ve
-              el cliente.
-            </p>
-          </div>
+      {/* CABECERA */}
+      <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-sm">
+        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col gap-2">
+          <p className="text-[11px] uppercase tracking-[0.25em] text-emerald-400">
+            BKC Hipotecas · Panel interno
+          </p>
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+            <div>
+              <h1 className="text-xl md:text-2xl font-semibold">
+                Clientes y expedientes (PRUEBA)
+              </h1>
+              <p className="text-xs text-slate-400 mt-1">
+                Desde aquí ves todos tus clientes y accedes a su expediente.
+              </p>
+            </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={() => location.reload()}
-              className="rounded-md border border-slate-700 px-3 py-1.5 text-xs md:text-sm hover:bg-slate-800 transition"
-            >
-              Refrescar
-            </button>
-            <button
-              type="button"
-              onClick={irANuevoCliente}
-              className="rounded-md bg-emerald-500 text-slate-950 px-3 py-1.5 text-xs md:text-sm font-semibold hover:bg-emerald-400 transition"
-            >
-              + Nuevo cliente
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="text-xs md:text-sm rounded-md border border-slate-700 px-3 py-1.5 hover:bg-slate-800 transition"
+              >
+                Refrescar
+              </button>
+              <Link
+                href="/portal/clients/new"
+                className="text-xs md:text-sm rounded-md bg-emerald-500 text-slate-950 px-3 py-1.5 font-semibold hover:bg-emerald-400 transition"
+              >
+                + Nuevo cliente
+              </Link>
+            </div>
           </div>
         </div>
       </header>
 
-      {/* Contenido */}
+      {/* CONTENIDO PRINCIPAL */}
       <main className="max-w-6xl mx-auto px-4 py-6 space-y-4">
         {/* Filtros y buscador */}
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          <div className="inline-flex rounded-full bg-slate-900/80 border border-slate-800 p-1">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+          <div className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/60 p-1 text-xs">
             <button
               type="button"
-              onClick={() => setEstadoFiltro('todos')}
-              className={`px-3 py-1.5 text-xs rounded-full ${
-                estadoFiltro === 'todos'
-                  ? 'bg-emerald-500 text-slate-950 font-semibold'
-                  : 'text-slate-300 hover:bg-slate-800'
+              onClick={() => setTab('todos')}
+              className={`px-3 py-1 rounded-full ${
+                tab === 'todos'
+                  ? 'bg-slate-800 text-slate-50'
+                  : 'text-slate-400 hover:text-slate-100'
               }`}
             >
               Todos
             </button>
             <button
               type="button"
-              onClick={() => setEstadoFiltro('en_estudio')}
-              className={`px-3 py-1.5 text-xs rounded-full ${
-                estadoFiltro === 'en_estudio'
-                  ? 'bg-emerald-500 text-slate-950 font-semibold'
-                  : 'text-slate-300 hover:bg-slate-800'
+              onClick={() => setTab('en_estudio')}
+              className={`px-3 py-1 rounded-full ${
+                tab === 'en_estudio'
+                  ? 'bg-slate-800 text-slate-50'
+                  : 'text-slate-400 hover:text-slate-100'
               }`}
             >
               En estudio
             </button>
             <button
               type="button"
-              onClick={() => setEstadoFiltro('cerrado')}
-              className={`px-3 py-1.5 text-xs rounded-full ${
-                estadoFiltro === 'cerrado'
-                  ? 'bg-emerald-500 text-slate-950 font-semibold'
-                  : 'text-slate-300 hover:bg-slate-800'
+              onClick={() => setTab('cerrado')}
+              className={`px-3 py-1 rounded-full ${
+                tab === 'cerrado'
+                  ? 'bg-slate-800 text-slate-50'
+                  : 'text-slate-400 hover:text-slate-100'
               }`}
             >
               Cerrado
             </button>
           </div>
 
-          <div className="w-full md:w-72">
+          <div className="w-full md:w-80">
             <input
               type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nombre, email, teléfono o expediente…"
-              className="w-full rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-xs md:text-sm text-slate-50 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+              placeholder="Buscar por nombre, email o teléfono…"
+              className="w-full rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-50 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
             />
           </div>
         </div>
 
-        {/* Mensajes de estado */}
-        {loading && (
-          <div className="mt-6 text-sm text-slate-400">
-            Cargando clientes y expedientes…
-          </div>
-        )}
-
-        {error && !loading && (
-          <div className="mt-4 rounded-md border border-red-700 bg-red-950/50 px-4 py-3 text-sm text-red-100">
+        {/* ESTADO / ERRORES */}
+        {error && (
+          <div className="rounded-md border border-red-700 bg-red-950/60 px-4 py-2 text-sm text-red-100">
             {error}
           </div>
         )}
 
-        {!loading && !error && casosFiltrados.length === 0 && (
-          <div className="mt-6 text-sm text-slate-400">
+        {loading && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-6 text-sm text-slate-300">
+            Cargando clientes y expedientes…
+          </div>
+        )}
+
+        {!loading && !error && filasFiltradas.length === 0 && (
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-6 text-sm text-slate-400">
             No hay clientes con los filtros actuales.
           </div>
         )}
 
-        {/* Tabla de clientes / expedientes */}
-        {!loading && !error && casosFiltrados.length > 0 && (
-          <div className="overflow-x-auto rounded-2xl border border-slate-900 bg-slate-950/60">
-            <table className="min-w-full text-xs md:text-sm">
-              <thead className="bg-slate-900/80 border-b border-slate-800">
+        {/* TABLA PRINCIPAL */}
+        {!loading && !error && filasFiltradas.length > 0 && (
+          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/60">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-900/70 border-b border-slate-800 text-xs text-slate-400">
                 <tr>
-                  <th className="px-4 py-3 text-left font-medium text-slate-400">Cliente</th>
-                  <th className="px-4 py-3 text-left font-medium text-slate-400">Contacto</th>
-                  <th className="px-4 py-3 text-left font-medium text-slate-400">Fechas</th>
-                  <th className="px-4 py-3 text-left font-medium text-slate-400">Expediente</th>
-                  <th className="px-4 py-3 text-left font-medium text-slate-400">Progreso</th>
-                  <th className="px-4 py-3 text-left font-medium text-slate-400">Observaciones</th>
-                  <th className="px-4 py-3 text-left font-medium text-slate-400">Acciones</th>
+                  <th className="px-4 py-2 text-left font-medium">Cliente</th>
+                  <th className="px-4 py-2 text-left font-medium">Contacto</th>
+                  <th className="px-4 py-2 text-left font-medium">Fechas</th>
+                  <th className="px-4 py-2 text-left font-medium">Expediente</th>
+                  <th className="px-4 py-2 text-left font-medium">Progreso</th>
+                  <th className="px-4 py-2 text-left font-medium">
+                    Observaciones
+                  </th>
+                  <th className="px-4 py-2 text-left font-medium">Acciones</th>
                 </tr>
               </thead>
-              <tbody>
-                {casosFiltrados.map((caso) => (
-                  <tr key={caso.id} className="border-t border-slate-900/70 hover:bg-slate-900/40">
-                    <td className="px-4 py-3 align-top">
-                      <div className="font-semibold text-slate-100">
-                        {caso.cliente.nombre || '—'}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 align-top text-slate-300">
-                      <div>{caso.cliente.email}</div>
-                      {caso.cliente.telefono && (
-                        <div className="text-xs text-slate-500">{caso.cliente.telefono}</div>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 align-top text-slate-300">
-                      <div className="text-xs">
-                        Alta: {formatearFecha(caso.created_at)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 align-top">
-                      <div className="font-medium text-slate-100">
-                        {caso.titulo || 'Expediente hipotecario'}
-                      </div>
-                      <div className="text-xs text-slate-500 mt-0.5">
-                        Estado: {formatearEstado(caso.estado)}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 align-top text-slate-300">
-                      <div className="text-xs">
-                        {caso.progreso ?? 0}
-                        %
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 align-top text-slate-300">
-                      <div className="text-xs line-clamp-2">
-                        {caso.notas || 'Expediente creado automáticamente.'}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 align-top">
-                      <div className="flex flex-col gap-1">
-                        <button
-                          type="button"
-                          onClick={() => irACaso(caso.id)}
-                          className="text-[11px] text-emerald-400 hover:text-emerald-300 text-left"
-                        >
-                          Ver expediente →
-                        </button>
-                        {caso.seguimiento_token ? (
-                          <button
-                            type="button"
-                            onClick={() => verComoCliente(caso.seguimiento_token)}
-                            className="text-[11px] text-emerald-400 hover:text-emerald-300 text-left"
-                          >
-                            Ver como cliente →
-                          </button>
-                        ) : (
-                          <span className="text-[11px] text-slate-500">
-                            Sin enlace de seguimiento
-                          </span>
+              <tbody className="divide-y divide-slate-900/80">
+                {filasFiltradas.map(({ cliente, caso }) => {
+                  const progreso = caso?.progreso ?? 0;
+                  const estado = formatearEstado(caso?.estado);
+
+                  return (
+                    <tr key={cliente.id} className="hover:bg-slate-900/60">
+                      <td className="px-4 py-3 align-top">
+                        <div className="font-medium text-slate-50">
+                          {cliente.nombre || 'Sin nombre'}
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3 align-top text-slate-300">
+                        <div>{cliente.email}</div>
+                        {cliente.telefono && (
+                          <div className="text-xs text-slate-500">
+                            {cliente.telefono}
+                          </div>
                         )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+
+                      <td className="px-4 py-3 align-top text-slate-300">
+                        <div className="text-xs text-slate-400">Alta:</div>
+                        <div>{formatearFecha(cliente.created_at)}</div>
+                      </td>
+
+                      <td className="px-4 py-3 align-top text-slate-300">
+                        <div className="font-medium">
+                          {caso?.titulo || 'Expediente sin título'}
+                        </div>
+                        <div className="text-xs text-slate-500 mt-1">
+                          Estado: {estado}
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3 align-top text-slate-300">
+                        <div className="flex items-center gap-2">
+                          <span>{progreso}%</span>
+                          <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                            <div
+                              className="h-full bg-emerald-500"
+                              style={{
+                                width: `${Math.min(
+                                  Math.max(progreso, 0),
+                                  100
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="px-4 py-3 align-top text-slate-300">
+                        <span className="text-xs">
+                          {caso?.notas || 'Expediente creado automáticamente.'}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3 align-top text-xs">
+                        <div className="flex flex-col gap-1">
+                          {caso && (
+                            <Link
+                              href={`/portal/case/${caso.id}`}
+                              className="text-emerald-400 hover:text-emerald-300 underline-offset-2 hover:underline"
+                            >
+                              Ver expediente →
+                            </Link>
+                          )}
+
+                          {caso?.seguimiento_token ? (
+                            <Link
+                              href={`/seguimiento/${caso.seguimiento_token}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-emerald-400 hover:text-emerald-300 underline-offset-2 hover:underline"
+                            >
+                              Ver como cliente →
+                            </Link>
+                          ) : (
+                            <span className="text-slate-500">
+                              Sin enlace de seguimiento
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
