@@ -195,4 +195,58 @@ export default function PortalPage() {
                           {nombreMostrar}
                         </div>
                       </td>
-                      <td className="px-4 py-3 tex
+                      <td className="px-4 py-3 text-slate-700">
+                        {item.dni || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {item.telefono || '-'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">
+                        {item.email || '-'}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                          {item.estado || 'Sin estado'}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-700">{fecha}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2">
+                          <Link
+                            href={`/portal/case/${item.id}`}
+                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-100"
+                          >
+                            Ver expediente
+                          </Link>
+
+                          {item.seguimiento_token ? (
+                            <Link
+                              href={`/seguimiento/${item.seguimiento_token}`}
+                              className="inline-flex items-center rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
+                              target="_blank"
+                            >
+                              Ver como cliente
+                            </Link>
+                          ) : (
+                            <button
+                              type="button"
+                              className="inline-flex cursor-not-allowed items-center rounded-md bg-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-500"
+                              title="Este expediente aún no tiene enlace de seguimiento"
+                              disabled
+                            >
+                              Sin enlace
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
