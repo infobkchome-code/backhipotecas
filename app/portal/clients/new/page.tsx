@@ -4,9 +4,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-// 👇 IMPORTANTE: aquí ya has puesto tu user_id REAL de Supabase
-const FIXED_USER_ID = '7efac488-1535-4784-b888-79554da1b5d5';
-
 export default function NewClientPage() {
   const router = useRouter();
 
@@ -25,21 +22,28 @@ export default function NewClientPage() {
       return;
     }
 
-    if (!FIXED_USER_ID || FIXED_USER_ID.startsWith('PON_AQUI')) {
-      setError(
-        'Falta configurar el FIXED_USER_ID en el código. Habla con Lex 😉'
-      );
-      return;
-    }
-
     setLoading(true);
 
     try {
-      // 1️⃣ Creamos el cliente en la tabla "clientes"
+      // 1️⃣ Usuario logueado (para user_id y para las políticas de Supabase)
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser();
+
+      if (userError || !user) {
+        console.error(userError ?? 'Usuario no autenticado');
+        setError(
+          'No se ha podido obtener el usuario (userId). Vuelve a iniciar sesión e inténtalo de nuevo.'
+        );
+        return;
+      }
+
+      // 2️⃣ Crear cliente en "clientes"
       const { data: cliente, error: cliError } = await supabase
         .from('clientes')
         .insert({
-          user_id: FIXED_USER_ID,
+          user_id: user.id,
           nombre: nombre.trim(),
           email: email.trim(),
           telefono: telefono.trim() || null,
@@ -54,11 +58,10 @@ export default function NewClientPage() {
             cliError?.message ?? 'sin detalle'
           }`
         );
-        setLoading(false);
         return;
       }
 
-      // 2️⃣ Generamos tokens para el expediente
+      // 3️⃣ Tokens para seguimiento
       const seguimientoToken =
         typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
@@ -69,10 +72,10 @@ export default function NewClientPage() {
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-      // 3️⃣ Creamos el expediente en la tabla "casos"
+      // 4️⃣ Crear expediente en "casos"
       const { error: casoError } = await supabase.from('casos').insert({
-        user_id: FIXED_USER_ID,
-        // 👇 AQUÍ ESTABA EL FALLO: antes poníamos client_id
+        user_id: user.id,
+        // 👇 IMPORTANTE: columna probablemente se llama "cliente_id"
         cliente_id: cliente.id,
         titulo: `Expediente ${cliente.nombre}`,
         estado: 'en_estudio',
@@ -88,11 +91,10 @@ export default function NewClientPage() {
         setError(
           'El cliente se ha creado, pero ha fallado la creación del expediente.'
         );
-        setLoading(false);
         return;
       }
 
-      // 4️⃣ Todo OK → volvemos al panel
+      // 5️⃣ Todo OK → volvemos al panel
       router.push('/portal');
     } catch (err: any) {
       console.error('Error inesperado creando cliente:', err);
@@ -105,6 +107,7 @@ export default function NewClientPage() {
           : JSON.stringify(err);
 
       setError(`Error inesperado: ${msg}`);
+    } finally {
       setLoading(false);
     }
   };
@@ -112,7 +115,7 @@ export default function NewClientPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
       <header className="border-b border-slate-800 px-6 py-4 flex items-center gap-4">
-        {/* 👈 Botón de volver atrás */}
+        {/* Botón de volver atrás */}
         <button
           type="button"
           onClick={() => router.push('/portal')}
