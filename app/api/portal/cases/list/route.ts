@@ -12,11 +12,10 @@ const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
 export async function GET() {
   try {
+    // Seleccionamos * para no romper si algún campo no existe (como "nombre")
     const { data, error } = await supabase
       .from('casos')
-      .select(
-        'id, nombre, dni, telefono, email, estado, created_at, seguimiento_token'
-      )
+      .select('*')
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -29,7 +28,7 @@ export async function GET() {
 
     return NextResponse.json({ data }, { status: 200 });
   } catch (err: any) {
-    console.error('Error inesperado en /api/portal/cases:', err);
+    console.error('Error inesperado en /api/portal/cases/list:', err);
     return NextResponse.json(
       { error: 'Error inesperado al obtener los expedientes' },
       { status: 500 }
