@@ -2,362 +2,231 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabaseClient';
 
-type Cliente = {
+type CaseItem = {
   id: string;
   nombre: string | null;
-  email: string | null;
+  dni: string | null;
   telefono: string | null;
-  created_at: string;
-};
-
-type Caso = {
-  id: string;
-  cliente_id: string;
-  titulo: string | null;
+  email: string | null;
   estado: string | null;
-  progreso: number | null;
-  notas: string | null;
+  created_at: string | null;
   seguimiento_token: string | null;
 };
 
-type Fila = {
-  cliente: Cliente;
-  caso: Caso | null;
+type ApiResponse = {
+  data?: CaseItem[];
+  cases?: CaseItem[];
+  casos?: CaseItem[];
 };
 
-type Tab = 'todos' | 'en_estudio' | 'cerrado';
-
-function formatearFecha(iso: string | null | undefined) {
-  if (!iso) return '-';
-  const d = new Date(iso);
-  return d.toLocaleDateString('es-ES');
-}
-
-function formatearEstado(estado: string | null | undefined) {
-  if (!estado) return 'EN_ESTUDIO';
-  return estado.toUpperCase();
-}
-
 export default function PortalPage() {
+  const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [filas, setFilas] = useState<Fila[]>([]);
-  const [busqueda, setBusqueda] = useState('');
-  const [tab, setTab] = useState<Tab>('todos');
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
-    const cargar = async () => {
-      setLoading(true);
-      setError(null);
-
+    const loadCases = async () => {
       try {
-        // 1️⃣ Usuario logueado
-        const {
-          data: { user },
-          error: userError,
-        } = await supabase.auth.getUser();
+        setLoading(true);
+        setError(null);
 
-        if (userError || !user) {
-          console.error(userError ?? 'Usuario no autenticado');
-          setError('Debes iniciar sesión para ver tus clientes.');
-          setLoading(false);
-          return;
+        const res = await fetch('/api/portal/cases', {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          // Para evitar cacheos raros
+          cache: 'no-store',
+        });
+
+        if (!res.ok) {
+          throw new Error(`Error al cargar los expedientes (${res.status})`);
         }
 
-        // 2️⃣ Clientes del usuario
-        const { data: clientes, error: cliError } = await supabase
-          .from('clientes')
-          .select('id, nombre, email, telefono, created_at')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
+        const json: ApiResponse | CaseItem[] = await res.json();
 
-        if (cliError) {
-          console.error('Error cargando clientes:', cliError);
-          setError('No se han podido cargar los clientes.');
-          setLoading(false);
-          return;
+        // Soportamos varias formas de respuesta: {data: [...]}, {cases: [...]}, {casos: [...]}, o array directo
+        let loaded: CaseItem[] = [];
+        if (Array.isArray(json)) {
+          loaded = json;
+        } else if (json.data) {
+          loaded = json.data;
+        } else if (json.cases) {
+          loaded = json.cases;
+        } else if (json.casos) {
+          loaded = json.casos;
         }
 
-        // 3️⃣ Casos del usuario
-        const { data: casos, error: casoError } = await supabase
-          .from('casos')
-          .select(
-            'id, cliente_id, titulo, estado, progreso, notas, seguimiento_token'
-          )
-          .eq('user_id', user.id);
-
-        if (casoError) {
-          console.error('Error cargando casos:', casoError);
-          setError('No se han podido cargar los expedientes.');
-          setLoading(false);
-          return;
-        }
-
-        const mapaCasos = new Map<string, Caso>();
-        (casos ?? []).forEach((c) => mapaCasos.set(c.cliente_id, c as Caso));
-
-        const filasCompletas: Fila[] = (clientes ?? []).map((cl) => ({
-          cliente: cl as Cliente,
-          caso: mapaCasos.get(cl.id) ?? null,
-        }));
-
-        setFilas(filasCompletas);
+        setCases(loaded);
       } catch (err: any) {
-        console.error('Error inesperado cargando portal:', err);
-        const msg =
-          typeof err === 'string'
-            ? err
-            : err?.message
-            ? err.message
-            : JSON.stringify(err);
-        setError(`Ha ocurrido un error inesperado: ${msg}`);
+        console.error(err);
+        setError(err.message ?? 'Error inesperado al cargar los expedientes');
       } finally {
         setLoading(false);
       }
     };
 
-    cargar();
+    loadCases();
   }, []);
 
-  const filasFiltradas = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
+  const filteredCases = useMemo(() => {
+    if (!search.trim()) return cases;
 
-    return filas.filter(({ cliente, caso }) => {
-      // 🔍 Búsqueda
-      if (q) {
-        const texto =
-          `${cliente.nombre ?? ''} ${cliente.email ?? ''} ${
-            cliente.telefono ?? ''
-          } ${caso?.titulo ?? ''}`.toLowerCase();
+    const term = search.toLowerCase();
 
-        if (!texto.includes(q)) return false;
-      }
+    return cases.filter((item) => {
+      const nombre = (item.nombre ?? '').toLowerCase();
+      const dni = (item.dni ?? '').toLowerCase();
+      const tel = (item.telefono ?? '').toLowerCase();
+      const email = (item.email ?? '').toLowerCase();
+      const estado = (item.estado ?? '').toLowerCase();
 
-      // 🏷️ Filtro por estado
-      if (tab === 'en_estudio') {
-        const e = (caso?.estado ?? 'EN_ESTUDIO').toUpperCase();
-        return e === 'EN_ESTUDIO';
-      }
-
-      if (tab === 'cerrado') {
-        const e = (caso?.estado ?? '').toUpperCase();
-        return e.includes('CERRADO');
-      }
-
-      // 'todos'
-      return true;
+      return (
+        nombre.includes(term) ||
+        dni.includes(term) ||
+        tel.includes(term) ||
+        email.includes(term) ||
+        estado.includes(term)
+      );
     });
-  }, [filas, busqueda, tab]);
+  }, [cases, search]);
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50">
-      {/* CABECERA */}
-      <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-sm">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col gap-2">
-          <p className="text-[11px] uppercase tracking-[0.25em] text-emerald-400">
-            BKC Hipotecas · Panel interno
-          </p>
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-            <div>
-              <h1 className="text-xl md:text-2xl font-semibold">
-                Clientes y expedientes (PRUEBA)
-              </h1>
-              <p className="text-xs text-slate-400 mt-1">
-                Desde aquí ves todos tus clientes y accedes a su expediente.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => window.location.reload()}
-                className="text-xs md:text-sm rounded-md border border-slate-700 px-3 py-1.5 hover:bg-slate-800 transition"
-              >
-                Refrescar
-              </button>
-              <Link
-                href="/portal/clients/new"
-                className="text-xs md:text-sm rounded-md bg-emerald-500 text-slate-950 px-3 py-1.5 font-semibold hover:bg-emerald-400 transition"
-              >
-                + Nuevo cliente
-              </Link>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* CONTENIDO PRINCIPAL */}
-      <main className="max-w-6xl mx-auto px-4 py-6 space-y-4">
-        {/* Filtros y buscador */}
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
-          <div className="inline-flex items-center rounded-full border border-slate-800 bg-slate-950/60 p-1 text-xs">
-            <button
-              type="button"
-              onClick={() => setTab('todos')}
-              className={`px-3 py-1 rounded-full ${
-                tab === 'todos'
-                  ? 'bg-slate-800 text-slate-50'
-                  : 'text-slate-400 hover:text-slate-100'
-              }`}
-            >
-              Todos
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab('en_estudio')}
-              className={`px-3 py-1 rounded-full ${
-                tab === 'en_estudio'
-                  ? 'bg-slate-800 text-slate-50'
-                  : 'text-slate-400 hover:text-slate-100'
-              }`}
-            >
-              En estudio
-            </button>
-            <button
-              type="button"
-              onClick={() => setTab('cerrado')}
-              className={`px-3 py-1 rounded-full ${
-                tab === 'cerrado'
-                  ? 'bg-slate-800 text-slate-50'
-                  : 'text-slate-400 hover:text-slate-100'
-              }`}
-            >
-              Cerrado
-            </button>
+    <div className="min-h-screen bg-slate-50">
+      {/* Contenedor principal */}
+      <div className="mx-auto max-w-6xl px-4 py-8">
+        {/* Cabecera */}
+        <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-2xl font-semibold text-slate-900">
+              BKC Hipotecas · Portal de expedientes
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              Revisa y accede a los expedientes de tus clientes. Usa el buscador para filtrar por nombre, DNI, teléfono, email o estado.
+            </p>
           </div>
 
-          <div className="w-full md:w-80">
+          <Link
+            href="/portal/nuevo"
+            className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700"
+          >
+            + Nuevo expediente
+          </Link>
+        </header>
+
+        {/* Buscador */}
+        <div className="mb-4">
+          <div className="relative max-w-md">
             <input
               type="text"
-              value={busqueda}
-              onChange={(e) => setBusqueda(e.target.value)}
-              placeholder="Buscar por nombre, email o teléfono…"
-              className="w-full rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-sm text-slate-50 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nombre, DNI, teléfono, email o estado..."
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 pr-10 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
             />
+            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400">
+              🔍
+            </span>
           </div>
         </div>
 
-        {/* ESTADO / ERRORES */}
-        {error && (
-          <div className="rounded-md border border-red-700 bg-red-950/60 px-4 py-2 text-sm text-red-100">
+        {/* Estados de carga / error */}
+        {loading && (
+          <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
+            Cargando expedientes...
+          </div>
+        )}
+
+        {error && !loading && (
+          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
             {error}
           </div>
         )}
 
-        {loading && (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-6 text-sm text-slate-300">
-            Cargando clientes y expedientes…
+        {!loading && !error && filteredCases.length === 0 && (
+          <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
+            No se han encontrado expedientes con ese filtro.
           </div>
         )}
 
-        {!loading && !error && filasFiltradas.length === 0 && (
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-6 text-sm text-slate-400">
-            No hay clientes con los filtros actuales.
-          </div>
-        )}
-
-        {/* TABLA PRINCIPAL */}
-        {!loading && !error && filasFiltradas.length > 0 && (
-          <div className="overflow-x-auto rounded-xl border border-slate-800 bg-slate-950/60">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-900/70 border-b border-slate-800 text-xs text-slate-400">
-                <tr>
-                  <th className="px-4 py-2 text-left font-medium">Cliente</th>
-                  <th className="px-4 py-2 text-left font-medium">Contacto</th>
-                  <th className="px-4 py-2 text-left font-medium">Fechas</th>
-                  <th className="px-4 py-2 text-left font-medium">Expediente</th>
-                  <th className="px-4 py-2 text-left font-medium">Progreso</th>
-                  <th className="px-4 py-2 text-left font-medium">
-                    Observaciones
-                  </th>
-                  <th className="px-4 py-2 text-left font-medium">Acciones</th>
+        {/* Tabla de expedientes */}
+        {!loading && !error && filteredCases.length > 0 && (
+          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <table className="min-w-full border-collapse text-sm">
+              <thead className="bg-slate-100">
+                <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <th className="px-4 py-3">Cliente</th>
+                  <th className="px-4 py-3">DNI</th>
+                  <th className="px-4 py-3">Teléfono</th>
+                  <th className="px-4 py-3">Email</th>
+                  <th className="px-4 py-3">Estado</th>
+                  <th className="px-4 py-3">Creado</th>
+                  <th className="px-4 py-3 text-right">Acciones</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-900/80">
-                {filasFiltradas.map(({ cliente, caso }) => {
-                  const progreso = caso?.progreso ?? 0;
-                  const estado = formatearEstado(caso?.estado);
+              <tbody className="divide-y divide-slate-100">
+                {filteredCases.map((item) => {
+                  const fecha =
+                    item.created_at
+                      ? new Date(item.created_at).toLocaleDateString('es-ES', {
+                          day: '2-digit',
+                          month: '2-digit',
+                          year: 'numeric',
+                        })
+                      : '-';
 
                   return (
-                    <tr key={cliente.id} className="hover:bg-slate-900/60">
-                      <td className="px-4 py-3 align-top">
-                        <div className="font-medium text-slate-50">
-                          {cliente.nombre || 'Sin nombre'}
+                    <tr key={item.id} className="hover:bg-slate-50">
+                      <td className="px-4 py-3">
+                        <div className="font-medium text-slate-900">
+                          {item.nombre || 'Sin nombre'}
                         </div>
                       </td>
-
-                      <td className="px-4 py-3 align-top text-slate-300">
-                        <div>{cliente.email}</div>
-                        {cliente.telefono && (
-                          <div className="text-xs text-slate-500">
-                            {cliente.telefono}
-                          </div>
-                        )}
+                      <td className="px-4 py-3 text-slate-700">
+                        {item.dni || '-'}
                       </td>
-
-                      <td className="px-4 py-3 align-top text-slate-300">
-                        <div className="text-xs text-slate-400">Alta:</div>
-                        <div>{formatearFecha(cliente.created_at)}</div>
+                      <td className="px-4 py-3 text-slate-700">
+                        {item.telefono || '-'}
                       </td>
-
-                      <td className="px-4 py-3 align-top text-slate-300">
-                        <div className="font-medium">
-                          {caso?.titulo || 'Expediente sin título'}
-                        </div>
-                        <div className="text-xs text-slate-500 mt-1">
-                          Estado: {estado}
-                        </div>
+                      <td className="px-4 py-3 text-slate-700">
+                        {item.email || '-'}
                       </td>
-
-                      <td className="px-4 py-3 align-top text-slate-300">
-                        <div className="flex items-center gap-2">
-                          <span>{progreso}%</span>
-                          <div className="flex-1 h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                            <div
-                              className="h-full bg-emerald-500"
-                              style={{
-                                width: `${Math.min(
-                                  Math.max(progreso, 0),
-                                  100
-                                )}%`,
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="px-4 py-3 align-top text-slate-300">
-                        <span className="text-xs">
-                          {caso?.notas || 'Expediente creado automáticamente.'}
+                      <td className="px-4 py-3">
+                        <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                          {item.estado || 'Sin estado'}
                         </span>
                       </td>
+                      <td className="px-4 py-3 text-slate-700">{fecha}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex justify-end gap-2">
+                          {/* Ver expediente interno */}
+                          <Link
+                            href={`/portal/case/${item.id}`}
+                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-100"
+                          >
+                            Ver expediente
+                          </Link>
 
-                      <td className="px-4 py-3 align-top text-xs">
-                        <div className="flex flex-col gap-1">
-                          {caso && (
+                          {/* Ver como cliente -> enlace de seguimiento */}
+                          {item.seguimiento_token ? (
                             <Link
-                              href={`/portal/case/${caso.id}`}
-                              className="text-emerald-400 hover:text-emerald-300 underline-offset-2 hover:underline"
-                            >
-                              Ver expediente →
-                            </Link>
-                          )}
-
-                          {caso?.seguimiento_token ? (
-                            <Link
-                              href={`/seguimiento/${caso.seguimiento_token}`}
+                              href={`/seguimiento/${item.seguimiento_token}`}
+                              className="inline-flex items-center rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
                               target="_blank"
-                              rel="noreferrer"
-                              className="text-emerald-400 hover:text-emerald-300 underline-offset-2 hover:underline"
                             >
-                              Ver como cliente →
+                              Ver como cliente
                             </Link>
                           ) : (
-                            <span className="text-slate-500">
-                              Sin enlace de seguimiento
-                            </span>
+                            <button
+                              type="button"
+                              className="inline-flex cursor-not-allowed items-center rounded-md bg-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-500"
+                              title="Este expediente aún no tiene enlace de seguimiento"
+                              disabled
+                            >
+                              Sin enlace
+                            </button>
                           )}
                         </div>
                       </td>
@@ -368,7 +237,7 @@ export default function PortalPage() {
             </table>
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }
