@@ -1,26 +1,47 @@
-import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient"; // 👈 IMPORTANTE: este import
+import { NextResponse } from 'next/server';
+import { createClient } from '@supabase/supabase-js';
 
-interface Params {
-  params: { token: string };
-}
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
-export async function GET(_request: Request, { params }: Params) {
-  const { token } = params;
+const supabase = createClient(supabaseUrl, supabaseServiceRoleKey);
 
-  // Usamos directamente el cliente supabase que ya tienes
-  const { data, error } = await supabase
-    .from("casos")
-    .select("*")
-    .eq("seguimiento_token", token)
-    .single();
+export async function GET(
+  _req: Request,
+  context: { params: { token: string } }
+) {
+  const token = context.params.token;
 
-  if (error || !data) {
+  try {
+    const { data, error } = await supabase
+      .from('casos')
+      .select(
+        'id, titulo, estado, progreso, notas, created_at, updated_at, seguimiento_token'
+      )
+      .eq('seguimiento_token', token)
+      .maybeSingle();
+
+    if (error) {
+      console.error('Error Supabase seguimiento:', error);
+      return NextResponse.json(
+        { error: 'Error al buscar el expediente' },
+        { status: 500 }
+      );
+    }
+
+    if (!data) {
+      return NextResponse.json(
+        { error: 'not_found' },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ data }, { status: 200 });
+  } catch (err) {
+    console.error('Error inesperado en /api/seguimiento/[token]:', err);
     return NextResponse.json(
-      { message: "Enlace de seguimiento no válido" },
-      { status: 404 }
+      { error: 'unexpected' },
+      { status: 500 }
     );
   }
-
-  return NextResponse.json({ expediente: data }, { status: 200 });
 }
