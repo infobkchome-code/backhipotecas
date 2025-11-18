@@ -1,189 +1,165 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
-import Link from "next/link";
+import { useEffect, useState } from 'react';
+import { useParams } from 'next/navigation';
 
-type CasoListado = {
+type SeguimientoCaso = {
   id: string;
   titulo: string;
   estado: string;
   progreso: number;
+  notas: string | null;
   created_at: string;
-  seguimiento_token: string;
-  cliente: {
-    nombre: string;
-    email: string;
-    telefono: string | null;
-  };
+  updated_at: string;
 };
 
-export default function PortalPage() {
-  const [casos, setCasos] = useState<CasoListado[]>([]);
+type ApiResponse = {
+  data?: SeguimientoCaso;
+  error?: string;
+};
+
+const ESTADO_LABEL: Record<string, string> = {
+  en_estudio: 'En estudio',
+  tasacion: 'Tasación',
+  fein: 'FEIN / Oferta',
+  notaria: 'Notaría',
+  compraventa: 'Firma compraventa',
+  fin: 'Expediente finalizado',
+  denegado: 'Denegado',
+};
+
+export default function SeguimientoPage() {
+  const params = useParams<{ token: string }>();
+  const token = params?.token;
+
+  const [caso, setCaso] = useState<SeguimientoCaso | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const cargarCasos = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      if (!user) {
-        setError("Debes iniciar sesión para ver tus expedientes.");
-        setLoading(false);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("casos")
-        .select(
-          `
-          id,
-          titulo,
-          estado,
-          progreso,
-          created_at,
-          seguimiento_token,
-          cliente:clientes (
-            nombre,
-            email,
-            telefono
-          )
-        `
-        )
-        .eq("user_id", user.id)
-        .order("created_at", { ascending: false });
-
-      if (error) {
-        console.error(error);
-        setError("No se han podido cargar los clientes.");
-      } else {
-        setCasos(data as any);
-      }
-    } catch (err) {
-      console.error(err);
-      setError("Error inesperado al cargar los expedientes.");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    cargarCasos();
-  }, []);
+    const loadData = async () => {
+      if (!token) return;
+
+      setLoading(true);
+      setErrorMsg(null);
+
+      try {
+        const res = await fetch(`/api/seguimiento/${token}`, {
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' },
+          cache: 'no-store',
+        });
+
+        const json: ApiResponse = await res.json();
+
+        if (!res.ok) {
+          if (json.error === 'not_found') {
+            setErrorMsg(
+              'No hemos encontrado ningún expediente asociado a este enlace. Es posible que haya caducado o sea incorrecto.'
+            );
+          } else {
+            setErrorMsg('Error al cargar el seguimiento del expediente.');
+          }
+          setLoading(false);
+          return;
+        }
+
+        if (!json.data) {
+          setErrorMsg(
+            'No hemos encontrado ningún expediente asociado a este enlace.'
+          );
+          setLoading(false);
+          return;
+        }
+
+        setCaso(json.data);
+        setLoading(false);
+      } catch (err) {
+        console.error(err);
+        setErrorMsg('Error inesperado al cargar el expediente.');
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [token]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
+        <div className="text-sm text-slate-300">Cargando expediente…</div>
+      </div>
+    );
+  }
+
+  if (errorMsg || !caso) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
+        <div className="max-w-md text-center space-y-3">
+          <h1 className="text-lg font-semibold">Enlace de seguimiento no válido</h1>
+          <p className="text-sm text-slate-300">{errorMsg}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const estadoLabel = ESTADO_LABEL[caso.estado] ?? 'En curso';
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
-      {/* HEADER */}
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
-        <div>
-          <p className="text-xs uppercase tracking-[0.25em] text-emerald-400">
-            BKC Hipotecas · Panel interno
+      <main className="max-w-2xl mx-auto px-6 py-10 space-y-6">
+        <header className="space-y-2">
+          <p className="text-xs uppercase tracking-wide text-emerald-400">
+            Seguimiento de expediente hipotecario
           </p>
-          <h1 className="text-xl font-semibold mt-1">
-            Clientes y expedientes (PRUEBA)
-          </h1>
-          <p className="text-xs text-slate-400 mt-1">
-            Desde aquí ves todos tus clientes y accedes a su expediente.
+          <h1 className="text-2xl font-semibold">{caso.titulo}</h1>
+          <p className="text-xs text-slate-400">
+            Creado el{' '}
+            {new Date(caso.created_at).toLocaleDateString('es-ES')}
           </p>
-        </div>
+        </header>
 
-        <Link
-          href="/portal/clients/new"
-          className="rounded-md bg-emerald-500 text-slate-950 text-sm font-semibold px-4 py-2 hover:bg-emerald-400 transition"
-        >
-          + Nuevo cliente
-        </Link>
-      </header>
-
-      {/* CONTENIDO */}
-      <main className="px-6 py-6 max-w-6xl mx-auto">
-        {error && (
-          <div className="rounded-md border border-red-700 bg-red-950/50 text-red-200 px-4 py-2 mb-4">
-            {error}
+        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
+          <div>
+            <p className="text-xs text-slate-400 mb-1">Estado actual</p>
+            <p className="inline-flex items-center rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
+              {estadoLabel}
+            </p>
           </div>
-        )}
 
-        {/* LOADING */}
-        {loading && (
-          <p className="text-slate-400 text-sm">Cargando expedientes…</p>
-        )}
-
-        {/* TABLA */}
-        {!loading && casos.length === 0 && (
-          <p className="text-slate-400 text-sm">
-            No hay clientes con los filtros actuales.
-          </p>
-        )}
-
-        {!loading && casos.length > 0 && (
-          <div className="mt-4 overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-400 border-b border-slate-800 text-xs">
-                  <th className="py-2">Cliente</th>
-                  <th className="py-2">Contacto</th>
-                  <th className="py-2">Fechas</th>
-                  <th className="py-2">Expediente</th>
-                  <th className="py-2">Progreso</th>
-                  <th className="py-2">Acciones</th>
-                </tr>
-              </thead>
-              <tbody>
-                {casos.map((c) => (
-                  <tr key={c.id} className="border-b border-slate-900">
-                    {/* CLIENTE */}
-                    <td className="py-2 font-medium">{c.cliente?.nombre}</td>
-
-                    {/* CONTACTO */}
-                    <td className="py-2 text-slate-300">
-                      {c.cliente?.email}
-                      <br />
-                      <span className="text-xs text-slate-500">
-                        {c.cliente?.telefono ?? ""}
-                      </span>
-                    </td>
-
-                    {/* FECHA */}
-                    <td className="py-2 text-slate-400">
-                      Alta:{" "}
-                      {new Date(c.created_at).toLocaleDateString("es-ES")}
-                    </td>
-
-                    {/* EXPEDIENTE */}
-                    <td className="py-2 font-medium">{c.titulo}</td>
-
-                    {/* PROGRESO */}
-                    <td className="py-2 text-slate-300">{c.progreso}%</td>
-
-                    {/* ACCIONES */}
-                    <td className="py-2 flex flex-col gap-2">
-                      <Link
-                        href={`/portal/case/${c.id}`}
-                        className="text-emerald-400 hover:text-emerald-300 text-xs underline"
-                      >
-                        Ver expediente →
-                      </Link>
-
-                      {/* BOTÓN QUE SIEMPRE APARECE */}
-                      <Link
-                        href={`/seguimiento/${c.seguimiento_token}`}
-                        target="_blank"
-                        className="text-emerald-300 hover:text-emerald-200 text-xs underline"
-                      >
-                        Ver como cliente →
-                      </Link>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div>
+            <p className="text-xs text-slate-400 mb-1">
+              Avance aproximado del expediente
+            </p>
+            <div className="mt-1 h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+              <div
+                className="h-2 bg-emerald-500 transition-all"
+                style={{
+                  width: `${Math.min(100, Math.max(0, caso.progreso ?? 0))}%`,
+                }}
+              />
+            </div>
+            <p className="mt-1 text-xs text-slate-300">
+              {Math.min(100, Math.max(0, caso.progreso ?? 0))}% completado
+            </p>
           </div>
-        )}
+
+          {caso.notas && (
+            <div>
+              <p className="text-xs text-slate-400 mb-1">
+                Comentarios de tu gestor
+              </p>
+              <p className="text-sm text-slate-100 whitespace-pre-wrap">
+                {caso.notas}
+              </p>
+            </div>
+          )}
+        </section>
+
+        <footer className="text-xs text-slate-500">
+          Última actualización:{' '}
+          {new Date(caso.updated_at).toLocaleString('es-ES')}
+        </footer>
       </main>
     </div>
   );
