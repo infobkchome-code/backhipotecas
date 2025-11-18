@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-// ⚠️ TU user_id REAL (el que sale en la columna user_id de clientes/casos)
+// 👇 TU user_id REAL (el que ves en la columna user_id de clientes y casos)
 const FIXED_USER_ID = '7efac488-1535-4784-b888-79554da1b5d5';
 
 export default function NewClientPage() {
@@ -28,7 +28,7 @@ export default function NewClientPage() {
     setLoading(true);
 
     try {
-      // 1️⃣ Crear cliente en "clientes"
+      // 1️⃣ Creamos el cliente en la tabla "clientes"
       const { data: cliente, error: cliError } = await supabase
         .from('clientes')
         .insert({
@@ -45,12 +45,12 @@ export default function NewClientPage() {
         setError(
           `No se ha podido crear el cliente. Detalle: ${
             cliError?.message ?? 'sin detalle'
-          }`
+          }`,
         );
         return;
       }
 
-      // 2️⃣ Generar tokens para seguimiento
+      // 2️⃣ Generamos tokens para el expediente
       const seguimientoToken =
         typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
@@ -61,10 +61,10 @@ export default function NewClientPage() {
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-      // 3️⃣ Crear expediente en "casos"
+      // 3️⃣ Creamos el expediente en la tabla "casos"
       const { error: casoError } = await supabase.from('casos').insert({
         user_id: FIXED_USER_ID,
-        // 👇 En tu tabla se llama "cliente_id"
+        // 👇 nombre de columna en tu tabla
         cliente_id: cliente.id,
         titulo: `Expediente ${cliente.nombre}`,
         estado: 'en_estudio',
@@ -78,7 +78,7 @@ export default function NewClientPage() {
       if (casoError) {
         console.error('Error creando caso:', casoError);
         setError(
-          'El cliente se ha creado, pero ha fallado la creación del expediente.'
+          'El cliente se ha creado, pero ha fallado la creación del expediente.',
         );
         return;
       }
