@@ -4,6 +4,9 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
+// ⚠️ TU user_id REAL (el que sale en la columna user_id de clientes/casos)
+const FIXED_USER_ID = '7efac488-1535-4784-b888-79554da1b5d5';
+
 export default function NewClientPage() {
   const router = useRouter();
 
@@ -25,25 +28,11 @@ export default function NewClientPage() {
     setLoading(true);
 
     try {
-      // 1️⃣ Usuario logueado (para user_id y para las políticas de Supabase)
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
-
-      if (userError || !user) {
-        console.error(userError ?? 'Usuario no autenticado');
-        setError(
-          'No se ha podido obtener el usuario (userId). Vuelve a iniciar sesión e inténtalo de nuevo.'
-        );
-        return;
-      }
-
-      // 2️⃣ Crear cliente en "clientes"
+      // 1️⃣ Crear cliente en "clientes"
       const { data: cliente, error: cliError } = await supabase
         .from('clientes')
         .insert({
-          user_id: user.id,
+          user_id: FIXED_USER_ID,
           nombre: nombre.trim(),
           email: email.trim(),
           telefono: telefono.trim() || null,
@@ -61,7 +50,7 @@ export default function NewClientPage() {
         return;
       }
 
-      // 3️⃣ Tokens para seguimiento
+      // 2️⃣ Generar tokens para seguimiento
       const seguimientoToken =
         typeof crypto !== 'undefined' && crypto.randomUUID
           ? crypto.randomUUID()
@@ -72,10 +61,10 @@ export default function NewClientPage() {
           ? crypto.randomUUID()
           : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-      // 4️⃣ Crear expediente en "casos"
+      // 3️⃣ Crear expediente en "casos"
       const { error: casoError } = await supabase.from('casos').insert({
-        user_id: user.id,
-        // 👇 IMPORTANTE: columna probablemente se llama "cliente_id"
+        user_id: FIXED_USER_ID,
+        // 👇 En tu tabla se llama "cliente_id"
         cliente_id: cliente.id,
         titulo: `Expediente ${cliente.nombre}`,
         estado: 'en_estudio',
@@ -94,7 +83,7 @@ export default function NewClientPage() {
         return;
       }
 
-      // 5️⃣ Todo OK → volvemos al panel
+      // 4️⃣ Todo OK → volvemos al panel
       router.push('/portal');
     } catch (err: any) {
       console.error('Error inesperado creando cliente:', err);
