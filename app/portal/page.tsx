@@ -32,12 +32,11 @@ export default function PortalPage() {
         setLoading(true);
         setError(null);
 
-        const res = await fetch('/api/portal/cases', {
+        const res = await fetch('/api/portal/cases/list', {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
           },
-          // Para evitar cacheos raros
           cache: 'no-store',
         });
 
@@ -47,7 +46,6 @@ export default function PortalPage() {
 
         const json: ApiResponse | CaseItem[] = await res.json();
 
-        // Soportamos varias formas de respuesta: {data: [...]}, {cases: [...]}, {casos: [...]}, o array directo
         let loaded: CaseItem[] = [];
         if (Array.isArray(json)) {
           loaded = json;
@@ -95,28 +93,26 @@ export default function PortalPage() {
 
   return (
     <div className="min-h-screen bg-slate-50">
-      {/* Contenedor principal */}
       <div className="mx-auto max-w-6xl px-4 py-8">
-        {/* Cabecera */}
         <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">
               BKC Hipotecas · Portal de expedientes
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Revisa y accede a los expedientes de tus clientes. Usa el buscador para filtrar por nombre, DNI, teléfono, email o estado.
+              Revisa y accede a los expedientes de tus clientes. Usa el buscador para
+              filtrar por nombre, DNI, teléfono, email o estado.
             </p>
           </div>
 
           <Link
-            href="/portal/nuevo"
+            href="/portal/clients/new"
             className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700"
           >
             + Nuevo expediente
           </Link>
         </header>
 
-        {/* Buscador */}
         <div className="mb-4">
           <div className="relative max-w-md">
             <input
@@ -132,7 +128,6 @@ export default function PortalPage() {
           </div>
         </div>
 
-        {/* Estados de carga / error */}
         {loading && (
           <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
             Cargando expedientes...
@@ -151,7 +146,6 @@ export default function PortalPage() {
           </div>
         )}
 
-        {/* Tabla de expedientes */}
         {!loading && !error && filteredCases.length > 0 && (
           <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <table className="min-w-full border-collapse text-sm">
@@ -201,7 +195,6 @@ export default function PortalPage() {
                       <td className="px-4 py-3 text-slate-700">{fecha}</td>
                       <td className="px-4 py-3">
                         <div className="flex justify-end gap-2">
-                          {/* Ver expediente interno */}
                           <Link
                             href={`/portal/case/${item.id}`}
                             className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-100"
@@ -209,7 +202,6 @@ export default function PortalPage() {
                             Ver expediente
                           </Link>
 
-                          {/* Ver como cliente -> enlace de seguimiento */}
                           {item.seguimiento_token ? (
                             <Link
                               href={`/seguimiento/${item.seguimiento_token}`}
