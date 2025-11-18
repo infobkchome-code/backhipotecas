@@ -5,13 +5,14 @@ import Link from 'next/link';
 
 type CaseItem = {
   id: string;
-  nombre: string | null;
-  dni: string | null;
-  telefono: string | null;
-  email: string | null;
-  estado: string | null;
-  created_at: string | null;
-  seguimiento_token: string | null;
+  dni?: string | null;
+  telefono?: string | null;
+  email?: string | null;
+  estado?: string | null;
+  created_at?: string | null;
+  seguimiento_token?: string | null;
+  // Permitimos cualquier otra columna que venga de Supabase
+  [key: string]: any;
 };
 
 type ApiResponse = {
@@ -19,6 +20,20 @@ type ApiResponse = {
   cases?: CaseItem[];
   casos?: CaseItem[];
 };
+
+// Intenta obtener el nombre del cliente desde varias posibles columnas
+function getNombre(item: CaseItem): string {
+  const posible =
+    item.nombre ??
+    item.cliente_nombre ??
+    item.nombre_cliente ??
+    item.nombre_y_apellidos ??
+    item.nombre_apellidos ??
+    item.titular ??
+    '';
+
+  return (posible ?? '').toString().trim();
+}
 
 export default function PortalPage() {
   const [cases, setCases] = useState<CaseItem[]>([]);
@@ -75,11 +90,11 @@ export default function PortalPage() {
     const term = search.toLowerCase();
 
     return cases.filter((item) => {
-      const nombre = (item.nombre ?? '').toLowerCase();
-      const dni = (item.dni ?? '').toLowerCase();
-      const tel = (item.telefono ?? '').toLowerCase();
-      const email = (item.email ?? '').toLowerCase();
-      const estado = (item.estado ?? '').toLowerCase();
+      const nombre = getNombre(item).toLowerCase();
+      const dni = (item.dni ?? '').toString().toLowerCase();
+      const tel = (item.telefono ?? '').toString().toLowerCase();
+      const email = (item.email ?? '').toString().toLowerCase();
+      const estado = (item.estado ?? '').toString().toLowerCase();
 
       return (
         nombre.includes(term) ||
@@ -171,65 +186,13 @@ export default function PortalPage() {
                         })
                       : '-';
 
+                  const nombreMostrar = getNombre(item) || 'Sin nombre';
+
                   return (
                     <tr key={item.id} className="hover:bg-slate-50">
                       <td className="px-4 py-3">
                         <div className="font-medium text-slate-900">
-                          {item.nombre || 'Sin nombre'}
+                          {nombreMostrar}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {item.dni || '-'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {item.telefono || '-'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {item.email || '-'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-                          {item.estado || 'Sin estado'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">{fecha}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-2">
-                          <Link
-                            href={`/portal/case/${item.id}`}
-                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-100"
-                          >
-                            Ver expediente
-                          </Link>
-
-                          {item.seguimiento_token ? (
-                            <Link
-                              href={`/seguimiento/${item.seguimiento_token}`}
-                              className="inline-flex items-center rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
-                              target="_blank"
-                            >
-                              Ver como cliente
-                            </Link>
-                          ) : (
-                            <button
-                              type="button"
-                              className="inline-flex cursor-not-allowed items-center rounded-md bg-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-500"
-                              title="Este expediente aún no tiene enlace de seguimiento"
-                              disabled
-                            >
-                              Sin enlace
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
+                      <td className="px-4 py-3 tex
