@@ -13,7 +13,7 @@ type Caso = {
   notas: string | null;
   created_at: string;
   updated_at: string;
-  seguimiento_token: string | null; // 🔥 IMPORTANTE
+  seguimiento_token: string | null;
 };
 
 type FileItem = {
@@ -56,6 +56,9 @@ export default function CaseDetailPage() {
   // userId para Storage
   const [userId, setUserId] = useState<string | null>(null);
 
+  // feedback copiar enlace
+  const [copyMsg, setCopyMsg] = useState<string | null>(null);
+
   // Cargar caso
   useEffect(() => {
     const fetchCase = async () => {
@@ -96,13 +99,13 @@ export default function CaseDetailPage() {
 
       const casoNormalizado: Caso = {
         id: c.id,
-        titulo: c.titulo,
-        estado: c.estado,
+        titulo: c.titulo ?? 'Expediente sin título',
+        estado: c.estado ?? 'en_estudio',
         progreso: c.progreso ?? 0,
         notas: c.notas ?? '',
         created_at: c.created_at,
         updated_at: c.updated_at,
-        seguimiento_token: c.seguimiento_token ?? null, // 🔥 IMPORTANTE
+        seguimiento_token: c.seguimiento_token ?? null,
       };
 
       setCaso(casoNormalizado);
@@ -265,6 +268,28 @@ export default function CaseDetailPage() {
     window.open(data.signedUrl, '_blank');
   };
 
+  // Copiar enlace de seguimiento
+  const handleCopyLink = async () => {
+    if (!caso?.seguimiento_token) return;
+
+    const origin =
+      typeof window !== 'undefined'
+        ? window.location.origin
+        : 'https://backhipotecas.vercel.app';
+
+    const fullUrl = `${origin}/seguimiento/${caso.seguimiento_token}`;
+
+    try {
+      await navigator.clipboard.writeText(fullUrl);
+      setCopyMsg('Enlace copiado al portapapeles.');
+      setTimeout(() => setCopyMsg(null), 2000);
+    } catch (e) {
+      console.error(e);
+      setCopyMsg('No se ha podido copiar el enlace.');
+      setTimeout(() => setCopyMsg(null), 2000);
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
@@ -291,10 +316,14 @@ export default function CaseDetailPage() {
     );
   }
 
-  // 🔗 Enlace correcto para el cliente
+  const origin =
+    typeof window !== 'undefined'
+      ? window.location.origin
+      : 'https://backhipotecas.vercel.app';
+
   const trackingUrl = caso.seguimiento_token
-    ? `https://backhipotecas.vercel.app/seguimiento/${caso.seguimiento_token}`
-    : 'Aún no hay enlace de seguimiento para este expediente.';
+    ? `${origin}/seguimiento/${caso.seguimiento_token}`
+    : '';
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
@@ -325,6 +354,11 @@ export default function CaseDetailPage() {
         {successMsg && (
           <div className="rounded-md border border-emerald-600 bg-emerald-950/60 px-4 py-2 text-sm text-emerald-100">
             {successMsg}
+          </div>
+        )}
+        {copyMsg && (
+          <div className="rounded-md border border-emerald-600 bg-emerald-950/60 px-4 py-2 text-xs text-emerald-100">
+            {copyMsg}
           </div>
         )}
 
@@ -492,17 +526,42 @@ export default function CaseDetailPage() {
           </div>
         </section>
 
-        {/* 🔥 Enlace seguimiento */}
+        {/* Enlace seguimiento */}
         <section className="rounded-lg border border-emerald-700 bg-emerald-950/40 p-4 space-y-3">
           <h2 className="text-sm font-semibold text-emerald-200">
             Enlace de seguimiento para el cliente
           </h2>
-          <p className="text-xs text-emerald-200/80">
-            Copia este enlace y envíaselo al cliente.
-          </p>
-          <div className="bg-slate-950 border border-emerald-700/70 rounded-md px-3 py-2 text-xs break-all text-emerald-100">
-            {trackingUrl}
-          </div>
+          {caso.seguimiento_token ? (
+            <>
+              <p className="text-xs text-emerald-200/80">
+                Copia este enlace o pulsa “Ver como cliente” para verlo tal y
+                como lo ve el cliente.
+              </p>
+              <div className="bg-slate-950 border border-emerald-700/70 rounded-md px-3 py-2 text-xs break-all text-emerald-100">
+                {trackingUrl}
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="px-3 py-1.5 rounded-md border border-emerald-600 text-xs text-emerald-100 hover:bg-emerald-600/20"
+                >
+                  Copiar enlace
+                </button>
+                <Link
+                  href={`/seguimiento/${caso.seguimiento_token}`}
+                  target="_blank"
+                  className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-medium text-slate-950 shadow-sm hover:bg-emerald-400"
+                >
+                  Ver como cliente
+                </Link>
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-emerald-200/80">
+              Aún no hay enlace de seguimiento generado para este expediente.
+            </p>
+          )}
         </section>
       </main>
     </div>
