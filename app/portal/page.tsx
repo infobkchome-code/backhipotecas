@@ -11,8 +11,7 @@ type CaseItem = {
   estado?: string | null;
   created_at?: string | null;
   seguimiento_token?: string | null;
-  // Permitimos cualquier otra columna que venga de Supabase
-  [key: string]: any;
+  [key: string]: any; // para el resto de columnas que vengan de Supabase
 };
 
 type ApiResponse = {
@@ -21,18 +20,18 @@ type ApiResponse = {
   casos?: CaseItem[];
 };
 
-// Intenta obtener el nombre del cliente desde varias posibles columnas
+// Detecta automáticamente la columna de nombre
 function getNombre(item: CaseItem): string {
-  const posible =
-    item.nombre ??
-    item.cliente_nombre ??
-    item.nombre_cliente ??
-    item.nombre_y_apellidos ??
-    item.nombre_apellidos ??
-    item.titular ??
-    '';
+  const keys = Object.keys(item);
+  // buscamos una key que contenga "nombre" o "name"
+  const nameKey = keys.find((k) =>
+    /nombre|name/i.test(k)
+  );
 
-  return (posible ?? '').toString().trim();
+  if (!nameKey) return '';
+
+  const val = item[nameKey];
+  return val == null ? '' : String(val).trim();
 }
 
 export default function PortalPage() {
@@ -186,7 +185,7 @@ export default function PortalPage() {
                         })
                       : '-';
 
-                  const nombreMostrar = getNombre(item) || 'Sin nombre';
+                  const nombreMostrar = getNombre(item) || `Expediente ${item.id}`;
 
                   return (
                     <tr key={item.id} className="hover:bg-slate-50">
