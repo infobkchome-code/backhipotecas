@@ -21,6 +21,14 @@ type FileItem = {
   created_at: string | null;
 };
 
+type LogItem = {
+  id: string;
+  created_at: string;
+  tipo: string;
+  descripcion: string | null;
+  visible_cliente: boolean;
+};
+
 const ESTADOS = [
   { value: 'en_estudio', label: 'En estudio' },
   { value: 'tasacion', label: 'Tasación' },
@@ -53,15 +61,18 @@ export default function CaseDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [docsMsg, setDocsMsg] = useState<string | null>(null);
 
-  // userId para Storage
+  // Historial
+  const [logs, setLogs] = useState<LogItem[]>([]);
+
+  // userId para Storage y logs
   const [userId, setUserId] = useState<string | null>(null);
 
   // feedback copiar enlace
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
 
-  // Cargar caso
+  // Cargar caso y logs
   useEffect(() => {
-    const fetchCase = async () => {
+    const fetchCaseAndLogs = async () => {
       setLoading(true);
       setErrorMsg(null);
       setSuccessMsg(null);
@@ -79,6 +90,7 @@ export default function CaseDetailPage() {
 
       setUserId(user.id);
 
+      // Caso
       const { data, error } = await supabase
         .from('casos')
         .select('*')
@@ -112,11 +124,25 @@ export default function CaseDetailPage() {
       setEstado(casoNormalizado.estado);
       setProgreso(casoNormalizado.progreso);
       setNotas(casoNormalizado.notas ?? '');
+
+      // Logs internos (todos, sin filtrar por visible_cliente)
+      const { data: logsData, error: logsError } = await supabase
+        .from('expediente_logs')
+        .select('id, created_at, tipo, descripcion, visible_cliente')
+        .eq('caso_id', c.id)
+        .order('created_at', { ascending: false });
+
+      if (logsError) {
+        console.error('Error cargando logs:', logsError);
+      } else {
+        setLogs((logsData as LogItem[]) ?? []);
+      }
+
       setLoading(false);
     };
 
     if (id) {
-      fetchCase();
+      fetchCaseAndLogs();
     }
   }, [id]);
 
@@ -153,7 +179,7 @@ export default function CaseDetailPage() {
     loadDocs();
   }, [userId, id]);
 
-  // Guardar cambios
+  // Guardar cambios (estado, progreso, notas) – el trigger ya loguea
   const handleSave = async () => {
     if (!caso) return;
     setSaving(true);
@@ -189,6 +215,18 @@ export default function CaseDetailPage() {
     }
 
     setSuccessMsg('Cambios guardados correctamente.');
+
+    // Vuelve a cargar logs para ver los nuevos registros del trigger
+    const { data: logsData, error: logsError } = await supabase
+      .from('expediente_logs')
+      .select('id, created_at, tipo, descripcion, visible_cliente')
+      .eq('caso_id', caso.id)
+      .order('created_at', { ascending: false });
+
+    if (!logsError && logsData) {
+      setLogs(logsData as LogItem[]);
+    }
+
     setSaving(false);
   };
 
@@ -199,7 +237,7 @@ export default function CaseDetailPage() {
     setDocsMsg(null);
   };
 
-  // Subida
+  // Subida + log documento
   const handleUpload = async () => {
     if (!fileToUpload || !userId || !caso) return;
     setUploading(true);
@@ -242,6 +280,32 @@ export default function CaseDetailPage() {
       setFiles(mapped);
       setFileToUpload(null);
       setDocsMsg('Documento subido correctamente.');
+
+      // Insertar log de documento (interno + visible para cliente)
+      const { error: logError } = await supabase
+        .from('expediente_logs')
+        .insert({
+          caso_id: caso.id,
+          user_id: userId,
+          tipo: 'documento',
+          descripcion: `Documento añadido: ${safeName}`,
+          visible_cliente: true, // el cliente verá que se añade documentación
+        });
+
+      if (logError) {
+        console.error('Error creando log de documento:', logError);
+      } else {
+        const { data: logsData, error: logsReloadError } = await supabase
+          .from('expediente_logs')
+          .select('id, created_at, tipo, descripcion, visible_cliente')
+          .eq('caso_id', caso.id)
+          .order('created_at', { ascending: false });
+
+        if (!logsReloadError && logsData) {
+          setLogs(logsData as LogItem[]);
+        }
+      }
+
       setUploading(false);
     } catch (err) {
       console.error(err);
@@ -561,6 +625,43 @@ export default function CaseDetailPage() {
             <p className="text-xs text-emerald-200/80">
               Aún no hay enlace de seguimiento generado para este expediente.
             </p>
+          )}
+        </section>
+
+        {/* Historial interno */}
+        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-slate-200">
+            Historial del expediente (solo interno)
+          </h2>
+          <p className="text-xs text-slate-400">
+            Aquí se registran automáticamente los cambios de estado, progreso,
+            notas y documentación. No es visible para el cliente.
+          </p>
+
+          {logs.length === 0 ? (
+            <p className="text-xs text-slate-500">
+              Aún no hay movimientos registrados para este expediente.
+            </p>
+          ) : (
+            <ul className="space-y-2 text-xs">
+              {logs.map((log) => (
+                <li
+                  key={log.id}
+                  className="flex gap-3 border-b border-slate-800 pb-2 last:border-b-0 last:pb-0"
+                >
+                  <div className="mt-0.5 h-2 w-2 rounded-full bg-emerald-500" />
+                  <div>
+                    <div className="text-slate-300">
+                      {log.descripcion || log.tipo}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                      {new Date(log.created_at).toLocaleString('es-ES')}{' '}
+                      {log.visible_cliente ? '· Visible para cliente' : '· Solo interno'}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
       </main>
