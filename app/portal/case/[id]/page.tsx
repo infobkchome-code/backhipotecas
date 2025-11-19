@@ -237,7 +237,7 @@ export default function CaseDetailPage() {
     setDocsMsg(null);
   };
 
-  // Subida + log documento (versión robusta)
+  // Subida + log documento (con limpieza fuerte del nombre)
   const handleUpload = async () => {
     if (!fileToUpload) {
       setDocsMsg('Primero selecciona un archivo.');
@@ -252,9 +252,13 @@ export default function CaseDetailPage() {
     setDocsMsg(null);
 
     try {
-      // Nombre "seguro" sin espacios
-      const safeName = fileToUpload.name.replace(/\s+/g, '_');
-      // Ruta: userId/casoId/nombreArchivo
+      // Limpieza fuerte del nombre para evitar errores en Supabase Storage
+      let safeName = fileToUpload.name
+        .normalize('NFD')                     // separa acentos
+        .replace(/[\u0300-\u036f]/g, '')      // elimina acentos
+        .replace(/[^a-zA-Z0-9._-]/g, '_')     // solo permite letras/números/._-
+        .replace(/_+/g, '_');                 // colapsa múltiples _
+
       const path = `${userId}/${caso.id}/${safeName}`;
 
       // Subir archivo (upsert: true para no fallar si ya existe)
