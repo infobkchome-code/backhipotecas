@@ -14,6 +14,8 @@ type Caso = {
   created_at: string;
   updated_at: string;
   seguimiento_token: string | null;
+  urgente: boolean;
+  fecha_limite: string | null; // date en texto (YYYY-MM-DD)
 };
 
 type FileItem = {
@@ -75,6 +77,8 @@ export default function CaseDetailPage() {
   const [estado, setEstado] = useState('en_estudio');
   const [progreso, setProgreso] = useState(0);
   const [notas, setNotas] = useState('');
+  const [urgente, setUrgente] = useState(false);
+  const [fechaLimite, setFechaLimite] = useState<string | null>(null);
 
   // Documentos
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -144,12 +148,16 @@ export default function CaseDetailPage() {
         created_at: c.created_at,
         updated_at: c.updated_at,
         seguimiento_token: c.seguimiento_token ?? null,
+        urgente: c.urgente ?? false,
+        fecha_limite: c.fecha_limite ?? null,
       };
 
       setCaso(casoNormalizado);
       setEstado(casoNormalizado.estado);
       setProgreso(casoNormalizado.progreso);
       setNotas(casoNormalizado.notas ?? '');
+      setUrgente(casoNormalizado.urgente);
+      setFechaLimite(casoNormalizado.fecha_limite);
 
       // Logs internos
       const { data: logsData, error: logsError } = await supabase
@@ -205,7 +213,7 @@ export default function CaseDetailPage() {
   }, [id]);
 
   // ----------------------------------------------------------
-  // Guardar estado, progreso y nota resumen
+  // Guardar estado, progreso, nota resumen, urgencia y fecha límite
   // ----------------------------------------------------------
   const handleSave = async () => {
     if (!caso) return;
@@ -230,6 +238,8 @@ export default function CaseDetailPage() {
         estado,
         progreso: Number(progreso) || 0,
         notas,
+        urgente,
+        fecha_limite: fechaLimite || null,
       })
       .eq('id', caso.id)
       .eq('user_id', user.id);
@@ -478,6 +488,14 @@ export default function CaseDetailPage() {
     ? `${origin}/seguimiento/${caso.seguimiento_token}`
     : '';
 
+  // Cálculo simple de etiqueta para fecha límite
+  let badgeFechaTexto: string | null = null;
+  if (fechaLimite) {
+    badgeFechaTexto = `Plazo: ${new Date(
+      fechaLimite
+    ).toLocaleDateString('es-ES')}`;
+  }
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
       {/* Barra superior */}
@@ -494,6 +512,20 @@ export default function CaseDetailPage() {
             Expediente hipotecario · creado el{' '}
             {new Date(caso.created_at).toLocaleDateString('es-ES')}
           </p>
+
+          {/* Badges de urgencia / fecha límite */}
+          <div className="flex flex-wrap items-center gap-2 mt-2">
+            {urgente && (
+              <span className="inline-flex items-center rounded-full bg-red-500/20 border border-red-500/60 px-2 py-0.5 text-[10px] font-semibold text-red-200 uppercase tracking-wide">
+                Urgente
+              </span>
+            )}
+            {badgeFechaTexto && (
+              <span className="inline-flex items-center rounded-full bg-amber-500/10 border border-amber-400/50 px-2 py-0.5 text-[10px] text-amber-200">
+                {badgeFechaTexto}
+              </span>
+            )}
+          </div>
         </div>
       </header>
 
@@ -556,6 +588,33 @@ export default function CaseDetailPage() {
               <div
                 className="h-2 bg-emerald-500 transition-all"
                 style={{ width: `${Math.min(100, Math.max(0, progreso))}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Urgente + fecha límite */}
+          <div className="grid grid-cols-1 md:grid-cols-[auto,200px] gap-3 items-end">
+            <label className="flex items-center gap-2 text-xs text-slate-200">
+              <input
+                type="checkbox"
+                checked={urgente}
+                onChange={(e) => setUrgente(e.target.checked)}
+                className="h-3 w-3 rounded border-slate-600 bg-slate-900 text-emerald-500 focus:ring-emerald-500"
+              />
+              <span>Marcar expediente como urgente</span>
+            </label>
+
+            <div>
+              <label className="block text-xs font-medium text-slate-400 mb-1">
+                Fecha límite interna
+              </label>
+              <input
+                type="date"
+                value={fechaLimite ?? ''}
+                onChange={(e) =>
+                  setFechaLimite(e.target.value ? e.target.value : null)
+                }
+                className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
               />
             </div>
           </div>
