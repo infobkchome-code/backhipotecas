@@ -17,8 +17,11 @@ type Caso = {
 };
 
 type FileItem = {
-  name: string;
-  created_at: string | null;
+  id: string;
+  tipo: string;
+  nombre_archivo: string;
+  storage_path: string;
+  created_at: string;
 };
 
 type LogItem = {
@@ -46,6 +49,17 @@ const ESTADOS = [
   { value: 'denegado', label: 'Denegado' },
 ];
 
+const DOC_TIPOS = [
+  { value: 'dni', label: 'DNI / NIE' },
+  { value: 'nomina', label: 'Nómina' },
+  { value: 'contrato', label: 'Contrato de trabajo' },
+  { value: 'vida_laboral', label: 'Vida laboral' },
+  { value: 'irpf', label: 'IRPF / Renta' },
+  { value: 'tasacion', label: 'Tasación' },
+  { value: 'fein', label: 'FEIN / Oferta' },
+  { value: 'otros', label: 'Otros' },
+];
+
 export default function CaseDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -65,6 +79,7 @@ export default function CaseDetailPage() {
   // Documentos
   const [files, setFiles] = useState<FileItem[]>([]);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
+  const [docTipo, setDocTipo] = useState('otros');
   const [uploading, setUploading] = useState(false);
   const [docsMsg, setDocsMsg] = useState<string | null>(null);
 
@@ -90,7 +105,6 @@ export default function CaseDetailPage() {
       setErrorMsg(null);
       setSuccessMsg(null);
 
-      // Obtener usuario
       const {
         data: { user },
         error: userError,
@@ -113,6 +127,7 @@ export default function CaseDetailPage() {
         .single();
 
       if (casoError || !casoData) {
+        console.error(casoError);
         setErrorMsg('No se ha encontrado el expediente.');
         setLoading(false);
         return;
@@ -137,22 +152,26 @@ export default function CaseDetailPage() {
       setNotas(casoNormalizado.notas ?? '');
 
       // Logs internos
-      const { data: logsData } = await supabase
+      const { data: logsData, error: logsError } = await supabase
         .from('expediente_logs')
-        .select('*')
+        .select('id, created_at, tipo, descripcion, visible_cliente')
         .eq('caso_id', c.id)
         .order('created_at', { ascending: false });
 
-      if (logsData) setLogs(logsData as LogItem[]);
+      if (!logsError && logsData) {
+        setLogs(logsData as LogItem[]);
+      }
 
       // Notas internas
-      const { data: notasData } = await supabase
+      const { data: notasData, error: notasError } = await supabase
         .from('expediente_notas')
-        .select('*')
+        .select('id, contenido, created_at, user_id')
         .eq('caso_id', c.id)
         .order('created_at', { ascending: true });
 
-      if (notasData) setNotasLista(notasData as NotaItem[]);
+      if (!notasError && notasData) {
+        setNotasLista(notasData as NotaItem[]);
+      }
 
       setLoading(false);
     };
@@ -161,34 +180,32 @@ export default function CaseDetailPage() {
   }, [id]);
 
   // ----------------------------------------------------------
-  // Cargar documentos
+  // Cargar documentos (desde expediente_documentos)
   // ----------------------------------------------------------
   useEffect(() => {
-    if (!userId || !id) return;
-
     const loadDocs = async () => {
-      const prefix = `${userId}/${id}`;
-      const { data, error } = await supabase.storage
-        .from('docs')
-        .list(prefix, { limit: 100, offset: 0 });
+      if (!id) return;
+
+      const { data, error } = await supabase
+        .from('expediente_documentos')
+        .select('id, tipo, nombre_archivo, storage_path, created_at')
+        .eq('caso_id', id)
+        .order('created_at', { ascending: false });
 
       if (error) {
+        console.error('Error cargando documentos:', error);
         setDocsMsg('No se pudieron cargar los documentos.');
         return;
       }
 
-      const mapped = data?.map((f) => ({
-        name: f.name,
-        created_at: f.created_at ?? null,
-      })) ?? [];
-
-      setFiles(mapped);
+      setFiles((data as FileItem[]) ?? []);
     };
 
     loadDocs();
-  }, [userId, id]);
+  }, [id]);
+
   // ----------------------------------------------------------
-  // Guardar estado, progreso y notas (trigger crea logs)
+  // Guardar estado, progreso y nota resumen
   // ----------------------------------------------------------
   const handleSave = async () => {
     if (!caso) return;
@@ -198,9 +215,10 @@ export default function CaseDetailPage() {
 
     const {
       data: { user },
+      error: userError,
     } = await supabase.auth.getUser();
 
-    if (!user) {
+    if (userError || !user) {
       setErrorMsg('Sesión no válida.');
       setSaving(false);
       return;
@@ -217,6 +235,7 @@ export default function CaseDetailPage() {
       .eq('user_id', user.id);
 
     if (error) {
+      console.error(error);
       setErrorMsg('No se han podido guardar los cambios.');
       setSaving(false);
       return;
@@ -224,14 +243,16 @@ export default function CaseDetailPage() {
 
     setSuccessMsg('Cambios guardados correctamente.');
 
-    // Recargar logs
-    const { data: logsData } = await supabase
+    // Recargar logs del trigger
+    const { data: logsData, error: logsError } = await supabase
       .from('expediente_logs')
-      .select('*')
+      .select('id, created_at, tipo, descripcion, visible_cliente')
       .eq('caso_id', caso.id)
       .order('created_at', { ascending: false });
 
-    if (logsData) setLogs(logsData as LogItem[]);
+    if (!logsError && logsData) {
+      setLogs(logsData as LogItem[]);
+    }
 
     setSaving(false);
   };
@@ -246,7 +267,7 @@ export default function CaseDetailPage() {
   };
 
   // ----------------------------------------------------------
-  // Subir documento con limpieza del nombre y log
+  // Subir documento (con tipo) + log
   // ----------------------------------------------------------
   const handleUpload = async () => {
     if (!fileToUpload) {
@@ -262,7 +283,7 @@ export default function CaseDetailPage() {
     setDocsMsg(null);
 
     try {
-      // Limpieza profunda del nombre
+      // Normalizar nombre
       let safeName = fileToUpload.name
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
@@ -271,51 +292,72 @@ export default function CaseDetailPage() {
 
       const path = `${userId}/${caso.id}/${safeName}`;
 
+      // Subir a Storage
       const { error: uploadError } = await supabase.storage
         .from('docs')
         .upload(path, fileToUpload, { upsert: true });
 
       if (uploadError) {
+        console.error('Error subiendo archivo:', uploadError);
         setDocsMsg(
-          `No se ha podido subir el documento: ${uploadError.message ?? ''}`
+          `No se ha podido subir el documento: ${
+            uploadError.message ?? ''
+          }`
         );
         setUploading(false);
         return;
       }
 
-      // Recargar documentos
-      const { data } = await supabase.storage
-        .from('docs')
-        .list(`${userId}/${caso.id}`);
+      // Insertar metadatos en expediente_documentos
+      const { data: docInsert, error: docError } = await supabase
+        .from('expediente_documentos')
+        .insert({
+          caso_id: caso.id,
+          user_id: userId,
+          tipo: docTipo,
+          nombre_archivo: safeName,
+          storage_path: path,
+        })
+        .select('id, tipo, nombre_archivo, storage_path, created_at')
+        .single();
 
-      const mapped =
-        data?.map((f) => ({
-          name: f.name,
-          created_at: f.created_at ?? null,
-        })) ?? [];
+      if (docError || !docInsert) {
+        console.error('Error guardando metadatos:', docError);
+        setDocsMsg(
+          'El archivo se subió, pero no se pudieron guardar los metadatos.'
+        );
+      } else {
+        // Añadir a la lista local
+        setFiles((prev) => [docInsert as FileItem, ...prev]);
+        setDocsMsg('Documento subido correctamente.');
+      }
 
-      setFiles(mapped);
-      setDocsMsg('Documento subido correctamente.');
       setFileToUpload(null);
 
-      // Crear log (no obligatorio)
-      await supabase.from('expediente_logs').insert({
+      // Crear log
+      const { error: logError } = await supabase.from('expediente_logs').insert({
         caso_id: caso.id,
         user_id: userId,
         tipo: 'documento',
-        descripcion: `Documento añadido: ${safeName}`,
+        descripcion: `Documento (${docTipo}) añadido: ${safeName}`,
         visible_cliente: true,
       });
 
-      // Recargar logs
-      const { data: logsData } = await supabase
-        .from('expediente_logs')
-        .select('*')
-        .eq('caso_id', caso.id)
-        .order('created_at', { ascending: false });
+      if (logError) {
+        console.error('Error creando log de documento:', logError);
+      } else {
+        const { data: logsData, error: logsError } = await supabase
+          .from('expediente_logs')
+          .select('id, created_at, tipo, descripcion, visible_cliente')
+          .eq('caso_id', caso.id)
+          .order('created_at', { ascending: false });
 
-      if (logsData) setLogs(logsData as LogItem[]);
+        if (!logsError && logsData) {
+          setLogs(logsData as LogItem[]);
+        }
+      }
     } catch (e) {
+      console.error(e);
       setDocsMsg('Error inesperado subiendo el documento.');
     } finally {
       setUploading(false);
@@ -323,17 +365,17 @@ export default function CaseDetailPage() {
   };
 
   // ----------------------------------------------------------
-  // Descargar documento
+  // Descargar documento desde Storage usando storage_path
   // ----------------------------------------------------------
-  const handleDownload = async (fileName: string) => {
-    if (!userId || !caso) return;
+  const handleDownload = async (file: FileItem) => {
+    if (!file?.storage_path) return;
 
-    const path = `${userId}/${caso.id}/${fileName}`;
     const { data, error } = await supabase.storage
       .from('docs')
-      .createSignedUrl(path, 60 * 10);
+      .createSignedUrl(file.storage_path, 60 * 10);
 
     if (error || !data?.signedUrl) {
+      console.error('Error creando signed URL:', error);
       setDocsMsg('No se pudo descargar el documento.');
       return;
     }
@@ -347,24 +389,32 @@ export default function CaseDetailPage() {
   const handleAddNota = async () => {
     if (!nuevaNota.trim() || !caso) return;
 
-    const text = nuevaNota.trim();
+    const texto = nuevaNota.trim();
     setNuevaNota('');
 
-    // Crear nota
-    await supabase.from('expediente_notas').insert({
-      caso_id: caso.id,
-      user_id: userId,
-      contenido: text,
-    });
-
-    // Recargar notas
-    const { data } = await supabase
+    const { error: insertError } = await supabase
       .from('expediente_notas')
-      .select('*')
+      .insert({
+        caso_id: caso.id,
+        user_id: userId,
+        contenido: texto,
+      });
+
+    if (insertError) {
+      console.error('Error guardando nota:', insertError);
+      setErrorMsg('No se pudo guardar la nota interna.');
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from('expediente_notas')
+      .select('id, contenido, created_at, user_id')
       .eq('caso_id', caso.id)
       .order('created_at', { ascending: true });
 
-    if (data) setNotasLista(data as NotaItem[]);
+    if (!error && data) {
+      setNotasLista(data as NotaItem[]);
+    }
   };
 
   // ----------------------------------------------------------
@@ -382,13 +432,14 @@ export default function CaseDetailPage() {
 
     try {
       await navigator.clipboard.writeText(fullUrl);
-      setCopyMsg('Enlace copiado.');
+      setCopyMsg('Enlace copiado al portapapeles.');
       setTimeout(() => setCopyMsg(null), 2000);
     } catch {
-      setCopyMsg('No se pudo copiar.');
+      setCopyMsg('No se pudo copiar el enlace.');
       setTimeout(() => setCopyMsg(null), 2000);
     }
   };
+
   // ----------------------------------------------------------
   // Render
   // ----------------------------------------------------------
@@ -509,7 +560,7 @@ export default function CaseDetailPage() {
             </div>
           </div>
 
-          {/* Notas resumen */}
+          {/* Nota resumen */}
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">
               Nota interna de resumen
@@ -543,7 +594,7 @@ export default function CaseDetailPage() {
           </div>
         </section>
 
-        {/* Documentos */}
+        {/* Documentos por tipo */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
           <h2 className="text-sm font-semibold text-slate-200">
             Documentación del expediente
@@ -555,20 +606,39 @@ export default function CaseDetailPage() {
             </div>
           )}
 
-          <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">
-            <input
-              type="file"
-              onChange={handleFileChange}
-              className="text-xs text-slate-300"
-            />
-            <button
-              type="button"
-              onClick={handleUpload}
-              disabled={!fileToUpload || uploading}
-              className="px-4 py-2 rounded-md bg-slate-100 text-slate-900 text-xs font-medium hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {uploading ? 'Subiendo…' : 'Subir documento'}
-            </button>
+          <div className="flex flex-col md:flex-row gap-3 items-start md:items-end">
+            <div className="flex-1 w-full">
+              <label className="block text-xs font-medium text-slate-400 mb-1">
+                Tipo de documento
+              </label>
+              <select
+                value={docTipo}
+                onChange={(e) => setDocTipo(e.target.value)}
+                className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              >
+                {DOC_TIPOS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="flex flex-col md:flex-row gap-3 items-start md:items-center">
+              <input
+                type="file"
+                onChange={handleFileChange}
+                className="text-xs text-slate-300"
+              />
+              <button
+                type="button"
+                onClick={handleUpload}
+                disabled={!fileToUpload || uploading}
+                className="px-4 py-2 rounded-md bg-slate-100 text-slate-900 text-xs font-medium hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {uploading ? 'Subiendo…' : 'Subir documento'}
+              </button>
+            </div>
           </div>
 
           {/* Tabla de docs */}
@@ -576,6 +646,7 @@ export default function CaseDetailPage() {
             <table className="w-full text-xs">
               <thead className="bg-slate-900/80 text-slate-400">
                 <tr>
+                  <th className="px-3 py-2 text-left font-medium">Tipo</th>
                   <th className="px-3 py-2 text-left font-medium">
                     Nombre del archivo
                   </th>
@@ -589,7 +660,7 @@ export default function CaseDetailPage() {
                 {files.length === 0 && (
                   <tr>
                     <td
-                      colSpan={3}
+                      colSpan={4}
                       className="px-3 py-3 text-center text-slate-500"
                     >
                       Aún no hay documentos subidos.
@@ -597,30 +668,39 @@ export default function CaseDetailPage() {
                   </tr>
                 )}
 
-                {files.map((f) => (
-                  <tr
-                    key={f.name}
-                    className="border-t border-slate-800 hover:bg-slate-900/50"
-                  >
-                    <td className="px-3 py-2 text-slate-100 break-all">
-                      {f.name}
-                    </td>
-                    <td className="px-3 py-2 text-slate-400">
-                      {f.created_at
-                        ? new Date(f.created_at).toLocaleString('es-ES')
-                        : '-'}
-                    </td>
-                    <td className="px-3 py-2">
-                      <button
-                        type="button"
-                        onClick={() => handleDownload(f.name)}
-                        className="text-emerald-400 hover:underline"
-                      >
-                        Descargar
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {files.map((f) => {
+                  const tipoLabel =
+                    DOC_TIPOS.find((t) => t.value === f.tipo)?.label ||
+                    f.tipo;
+
+                  return (
+                    <tr
+                      key={f.id}
+                      className="border-t border-slate-800 hover:bg-slate-900/50"
+                    >
+                      <td className="px-3 py-2 text-slate-100">
+                        {tipoLabel}
+                      </td>
+                      <td className="px-3 py-2 text-slate-100 break-all">
+                        {f.nombre_archivo}
+                      </td>
+                      <td className="px-3 py-2 text-slate-400">
+                        {f.created_at
+                          ? new Date(f.created_at).toLocaleString('es-ES')
+                          : '-'}
+                      </td>
+                      <td className="px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => handleDownload(f)}
+                          className="text-emerald-400 hover:underline"
+                        >
+                          Descargar
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
