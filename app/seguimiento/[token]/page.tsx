@@ -2,102 +2,52 @@
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
 
-type SeguimientoCaso = {
+type Caso = {
   id: string;
   titulo: string;
   estado: string;
   progreso: number;
-  notas: string | null;
-  created_at: string;
+  fecha_limite: string | null;
   updated_at: string;
-};
-
-type LogItem = {
-  id: string;
-  created_at: string;
-  tipo: string;
-  descripcion: string | null;
-};
-
-type ApiResponse = {
-  data?: SeguimientoCaso;
-  logs?: LogItem[];
-  error?: string;
-};
-
-const ESTADO_LABEL: Record<string, string> = {
-  en_estudio: 'En estudio',
-  tasacion: 'Tasación',
-  fein: 'FEIN / Oferta',
-  notaria: 'Notaría',
-  compraventa: 'Firma compraventa',
-  fin: 'Expediente finalizado',
-  denegado: 'Denegado',
 };
 
 export default function SeguimientoPage() {
   const params = useParams<{ token: string }>();
   const token = params?.token;
 
-  const [caso, setCaso] = useState<SeguimientoCaso | null>(null);
-  const [logs, setLogs] = useState<LogItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [caso, setCaso] = useState<Caso | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    const loadData = async () => {
+    const load = async () => {
       if (!token) return;
 
-      setLoading(true);
-      setErrorMsg(null);
+      const { data, error } = await supabase
+        .from('casos')
+        .select('id, titulo, estado, progreso, fecha_limite, updated_at')
+        .eq('seguimiento_token', token)
+        .single();
 
-      try {
-        const res = await fetch(`/api/seguimiento/${token}`, {
-          method: 'GET',
-          headers: { 'Content-Type': 'application/json' },
-          cache: 'no-store',
-        });
-
-        const json: ApiResponse = await res.json();
-
-        if (!res.ok) {
-          if (json.error === 'not_found') {
-            setErrorMsg(
-              'No hemos encontrado ningún expediente asociado a este enlace. Es posible que haya caducado o sea incorrecto.'
-            );
-          } else {
-            setErrorMsg('Error al cargar el seguimiento del expediente.');
-          }
-          setLoading(false);
-          return;
-        }
-
-        if (!json.data) {
-          setErrorMsg(
-            'No hemos encontrado ningún expediente asociado a este enlace.'
-          );
-          setLoading(false);
-          return;
-        }
-
-        setCaso(json.data);
-        setLogs(json.logs ?? []);
+      if (error || !data) {
+        setErrorMsg('Enlace de seguimiento no válido.');
         setLoading(false);
-      } catch (err) {
-        console.error(err);
-        setErrorMsg('Error inesperado al cargar el expediente.');
-        setLoading(false);
+        return;
       }
+
+      setCaso(data as Caso);
+      setLoading(false);
     };
 
-    loadData();
+    load();
   }, [token]);
 
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
-        <div className="text-sm text-slate-300">Cargando expediente…</div>
+        <p className="text-sm text-slate-300">Cargando expediente…</p>
       </div>
     );
   }
@@ -105,107 +55,29 @@ export default function SeguimientoPage() {
   if (errorMsg || !caso) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
-        <div className="max-w-md text-center space-y-3">
-          <h1 className="text-lg font-semibold">Enlace de seguimiento no válido</h1>
-          <p className="text-sm text-slate-300">{errorMsg}</p>
+        <div className="border border-red-700 bg-red-900/40 px-4 py-3 rounded-md">
+          <p className="text-red-200 text-sm">{errorMsg || 'Expediente no encontrado.'}</p>
         </div>
       </div>
     );
   }
 
-  const estadoLabel = ESTADO_LABEL[caso.estado] ?? 'En curso';
-
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50">
-      <main className="max-w-2xl mx-auto px-6 py-10 space-y-6">
-        <header className="space-y-2">
-          <p className="text-xs uppercase tracking-wide text-emerald-400">
-            Seguimiento de expediente hipotecario
-          </p>
-          <h1 className="text-2xl font-semibold">{caso.titulo}</h1>
-          <p className="text-xs text-slate-400">
-            Creado el{' '}
-            {new Date(caso.created_at).toLocaleDateString('es-ES')}
-          </p>
-        </header>
+    <div className="min-h-screen bg-slate-950 text-slate-50 p-6">
+      <header className="max-w-3xl mx-auto mb-6">
+        <h1 className="text-xl font-semibold">{caso.titulo}</h1>
+        <p className="text-xs text-slate-400">
+          Seguimiento del expediente hipotecario
+        </p>
+      </header>
 
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
-          <div>
-            <p className="text-xs text-slate-400 mb-1">Estado actual</p>
-            <p className="inline-flex items-center rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
-              {estadoLabel}
-            </p>
-          </div>
+      <main className="max-w-3xl mx-auto space-y-6">
 
-          <div>
-            <p className="text-xs text-slate-400 mb-1">
-              Avance aproximado del expediente
-            </p>
-            <div className="mt-1 h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-              <div
-                className="h-2 bg-emerald-500 transition-all"
-                style={{
-                  width: `${Math.min(100, Math.max(0, caso.progreso ?? 0))}%`,
-                }}
-              />
-            </div>
-            <p className="mt-1 text-xs text-slate-300">
-              {Math.min(100, Math.max(0, caso.progreso ?? 0))}% completado
-            </p>
-          </div>
+        {/* Aquí irá Bloque 2: Estado + Progreso */}
+        {/* Aquí irá Bloque 3: Checklist cliente */}
+        {/* Aquí irá Bloque 4: Subida documentos */}
+        {/* Aquí irá Bloque 5: Mensajes del gestor */}
 
-          {caso.notas && (
-            <div>
-              <p className="text-xs text-slate-400 mb-1">
-                Comentarios de tu gestor
-              </p>
-              <p className="text-sm text-slate-100 whitespace-pre-wrap">
-                {caso.notas}
-              </p>
-            </div>
-          )}
-        </section>
-
-        {/* Timeline visible para cliente */}
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-slate-200">
-            Historial de tu expediente
-          </h2>
-          <p className="text-xs text-slate-400">
-            Aquí puedes ver los principales hitos: cambios de estado, avance y
-            documentación añadida.
-          </p>
-
-          {logs.length === 0 ? (
-            <p className="text-xs text-slate-500">
-              Aún no hay movimientos registrados visibles para este expediente.
-            </p>
-          ) : (
-            <ul className="space-y-2 text-xs">
-              {logs.map((log) => (
-                <li
-                  key={log.id}
-                  className="flex gap-3 border-b border-slate-800 pb-2 last:border-b-0 last:pb-0"
-                >
-                  <div className="mt-0.5 h-2 w-2 rounded-full bg-emerald-500" />
-                  <div>
-                    <div className="text-slate-300">
-                      {log.descripcion || log.tipo}
-                    </div>
-                    <div className="text-[10px] text-slate-500 mt-0.5">
-                      {new Date(log.created_at).toLocaleString('es-ES')}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        <footer className="text-xs text-slate-500">
-          Última actualización:{' '}
-          {new Date(caso.updated_at).toLocaleString('es-ES')}
-        </footer>
       </main>
     </div>
   );
