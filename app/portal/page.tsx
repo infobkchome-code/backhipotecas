@@ -12,7 +12,7 @@ type CaseItem = {
   created_at?: string | null;
   seguimiento_token?: string | null;
   titulo?: string | null;
-  [key: string]: any; // resto de columnas que vengan de Supabase
+  [key: string]: any; // resto de columnas
 };
 
 type ApiResponse = {
@@ -21,9 +21,18 @@ type ApiResponse = {
   casos?: CaseItem[];
 };
 
-// Detecta el "nombre" más razonable que tengamos para mostrar
+const ESTADOS = [
+  { value: 'en_estudio', label: 'En estudio' },
+  { value: 'tasacion', label: 'Tasación' },
+  { value: 'fein', label: 'FEIN / Oferta' },
+  { value: 'notaria', label: 'Notaría' },
+  { value: 'compraventa', label: 'Firma compraventa' },
+  { value: 'fin', label: 'Expediente finalizado' },
+  { value: 'denegado', label: 'Denegado' },
+];
+
+// Detecta el "nombre" más razonable para mostrar
 function getNombre(item: CaseItem): string {
-  // 1) Campos típicos de nombre
   const directName =
     item.nombre ??
     item.cliente_nombre ??
@@ -33,14 +42,8 @@ function getNombre(item: CaseItem): string {
     item.titular;
 
   if (directName) return String(directName).trim();
-
-  // 2) Si no hay nombre, usamos el título del expediente
   if (item.titulo) return String(item.titulo).trim();
-
-  // 3) Si tampoco hay título, usamos el email si existe
   if (item.email) return String(item.email).trim();
-
-  // 4) Último recurso: “Expediente {id}”
   return `Expediente ${item.id}`;
 }
 
@@ -48,7 +51,9 @@ export default function PortalPage() {
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
   const [search, setSearch] = useState('');
+  const [estadoFilter, setEstadoFilter] = useState<'todos' | string>('todos');
 
   useEffect(() => {
     const loadCases = async () => {
@@ -94,16 +99,24 @@ export default function PortalPage() {
   }, []);
 
   const filteredCases = useMemo(() => {
-    if (!search.trim()) return cases;
-
-    const term = search.toLowerCase();
+    const term = search.toLowerCase().trim();
 
     return cases.filter((item) => {
+      const estadoItem = (item.estado ?? '').toString();
+
+      // 1) Filtrar por estado si no es "todos"
+      if (estadoFilter !== 'todos' && estadoItem !== estadoFilter) {
+        return false;
+      }
+
+      // 2) Filtrar por texto si hay término
+      if (!term) return true;
+
       const nombre = getNombre(item).toLowerCase();
       const dni = (item.dni ?? '').toString().toLowerCase();
       const tel = (item.telefono ?? '').toString().toLowerCase();
       const email = (item.email ?? '').toString().toLowerCase();
-      const estado = (item.estado ?? '').toString().toLowerCase();
+      const estado = estadoItem.toLowerCase();
 
       return (
         nombre.includes(term) ||
@@ -113,7 +126,12 @@ export default function PortalPage() {
         estado.includes(term)
       );
     });
-  }, [cases, search]);
+  }, [cases, search, estadoFilter]);
+
+  const handleClearFilters = () => {
+    setSearch('');
+    setEstadoFilter('todos');
+  };
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -124,8 +142,8 @@ export default function PortalPage() {
               BKC Hipotecas · Portal de expedientes
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Revisa y accede a los expedientes de tus clientes. Usa el buscador para
-              filtrar por nombre, DNI, teléfono, email o estado.
+              Revisa y accede a los expedientes de tus clientes. Usa el buscador y los filtros
+              para encontrar rápidamente lo que necesitas.
             </p>
           </div>
 
@@ -137,8 +155,9 @@ export default function PortalPage() {
           </Link>
         </header>
 
-        <div className="mb-4">
-          <div className="relative max-w-md">
+        {/* Filtros */}
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative max-w-md w-full">
             <input
               type="text"
               value={search}
@@ -149,6 +168,31 @@ export default function PortalPage() {
             <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400">
               🔍
             </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <select
+              value={estadoFilter}
+              onChange={(e) =>
+                setEstadoFilter(e.target.value as 'todos' | string)
+              }
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            >
+              <option value="todos">Todos los estados</option>
+              {ESTADOS.map((e) => (
+                <option key={e.value} value={e.value}>
+                  {e.label}
+                </option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={handleClearFilters}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-600 hover:bg-slate-100"
+            >
+              Limpiar filtros
+            </button>
           </div>
         </div>
 
@@ -166,7 +210,7 @@ export default function PortalPage() {
 
         {!loading && !error && filteredCases.length === 0 && (
           <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-            No se han encontrado expedientes con ese filtro.
+            No se han encontrado expedientes con esos filtros.
           </div>
         )}
 
