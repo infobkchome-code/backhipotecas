@@ -1,305 +1,407 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { supabase } from '@/lib/supabaseClient';
 
-type CaseItem = {
+// -----------------------------
+// Tipos
+// -----------------------------
+type Caso = {
   id: string;
-  dni?: string | null;
-  telefono?: string | null;
-  email?: string | null;
-  estado?: string | null;
-  created_at?: string | null;
-  seguimiento_token?: string | null;
-  titulo?: string | null;
-  [key: string]: any; // resto de columnas
+  titulo: string;
+  estado: string;
+  progreso: number;
+  urgente: boolean;
+  fecha_limite: string | null;
+  updated_at: string;
 };
 
-type ApiResponse = {
-  data?: CaseItem[];
-  cases?: CaseItem[];
-  casos?: CaseItem[];
-};
-
+// Estados para contadores
 const ESTADOS = [
   { value: 'en_estudio', label: 'En estudio' },
   { value: 'tasacion', label: 'Tasación' },
-  { value: 'fein', label: 'FEIN / Oferta' },
+  { value: 'fein', label: 'FEIN' },
   { value: 'notaria', label: 'Notaría' },
-  { value: 'compraventa', label: 'Firma compraventa' },
-  { value: 'fin', label: 'Expediente finalizado' },
+  { value: 'compraventa', label: 'Compraventa' },
+  { value: 'fin', label: 'Finalizado' },
   { value: 'denegado', label: 'Denegado' },
 ];
 
-// Detecta el "nombre" más razonable para mostrar
-function getNombre(item: CaseItem): string {
-  const directName =
-    item.nombre ??
-    item.cliente_nombre ??
-    item.nombre_cliente ??
-    item.nombre_y_apellidos ??
-    item.nombre_apellidos ??
-    item.titular;
-
-  if (directName) return String(directName).trim();
-  if (item.titulo) return String(item.titulo).trim();
-  if (item.email) return String(item.email).trim();
-  return `Expediente ${item.id}`;
-}
-
-export default function PortalPage() {
-  const [cases, setCases] = useState<CaseItem[]>([]);
+export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
+  const [casos, setCasos] = useState<Caso[]>([]);
+  const [filtered, setFiltered] = useState<Caso[]>([]);
   const [search, setSearch] = useState('');
-  const [estadoFilter, setEstadoFilter] = useState<'todos' | string>('todos');
 
+  // Filtros simples
+  const [filterEstado, setFilterEstado] = useState<string | null>(null);
+  const [filterUrgente, setFilterUrgente] = useState<boolean | null>(null);
+  const [filterVencido, setFilterVencido] = useState<boolean | null>(null);
+
+  // -----------------------------
+  // Cargar expedientes
+  // -----------------------------
   useEffect(() => {
-    const loadCases = async () => {
-      try {
-        setLoading(true);
-        setError(null);
+    const load = async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
 
-        const res = await fetch('/api/portal/cases/list', {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          cache: 'no-store',
-        });
+      if (!user) return;
 
-        if (!res.ok) {
-          throw new Error(`Error al cargar los expedientes (${res.status})`);
-        }
+      const { data, error } = await supabase
+        .from('casos')
+        .select(
+          `
+          id,
+          titulo,
+          estado,
+          progreso,
+          urgente,
+          fecha_limite,
+          updated_at
+        `
+        )
+        .eq('user_id', user.id)
+        .order('updated_at', { ascending: false });
 
-        const json: ApiResponse | CaseItem[] = await res.json();
-
-        let loaded: CaseItem[] = [];
-        if (Array.isArray(json)) {
-          loaded = json;
-        } else if (json.data) {
-          loaded = json.data;
-        } else if (json.cases) {
-          loaded = json.cases;
-        } else if (json.casos) {
-          loaded = json.casos;
-        }
-
-        setCases(loaded);
-      } catch (err: any) {
-        console.error(err);
-        setError(err.message ?? 'Error inesperado al cargar los expedientes');
-      } finally {
-        setLoading(false);
+      if (!error && data) {
+        setCasos(data as Caso[]);
+        setFiltered(data as Caso[]);
       }
+
+      setLoading(false);
     };
 
-    loadCases();
+    load();
   }, []);
 
-  const filteredCases = useMemo(() => {
-    const term = search.toLowerCase().trim();
+  // -----------------------------
+  // Aplicar buscador + filtros
+  // -----------------------------
+  useEffect(() => {
+    let results = [...casos];
 
-    return cases.filter((item) => {
-      const estadoItem = (item.estado ?? '').toString();
-
-      // 1) Filtrar por estado si no es "todos"
-      if (estadoFilter !== 'todos' && estadoItem !== estadoFilter) {
-        return false;
-      }
-
-      // 2) Filtrar por texto si hay término
-      if (!term) return true;
-
-      const nombre = getNombre(item).toLowerCase();
-      const dni = (item.dni ?? '').toString().toLowerCase();
-      const tel = (item.telefono ?? '').toString().toLowerCase();
-      const email = (item.email ?? '').toString().toLowerCase();
-      const estado = estadoItem.toLowerCase();
-
-      return (
-        nombre.includes(term) ||
-        dni.includes(term) ||
-        tel.includes(term) ||
-        email.includes(term) ||
-        estado.includes(term)
+    // Buscador
+    if (search.trim() !== '') {
+      const term = search.toLowerCase();
+      results = results.filter((c) =>
+        c.titulo.toLowerCase().includes(term)
       );
-    });
-  }, [cases, search, estadoFilter]);
+    }
 
-  const handleClearFilters = () => {
-    setSearch('');
-    setEstadoFilter('todos');
-  };
+    // Filtro estado
+    if (filterEstado) {
+      results = results.filter((c) => c.estado === filterEstado);
+    }
+
+    // Filtro urgente
+    if (filterUrgente !== null) {
+      results = results.filter((c) => c.urgente === filterUrgente);
+    }
+
+    // Filtro vencidos
+    if (filterVencido) {
+      const now = new Date().getTime();
+      results = results.filter((c) => {
+        if (!c.fecha_limite) return false;
+        return new Date(c.fecha_limite).getTime() < now;
+      });
+    }
+
+    setFiltered(results);
+  }, [search, filterEstado, filterUrgente, filterVencido, casos]);
+
+  // Contadores
+  const countByEstado = (estado: string) =>
+    casos.filter((c) => c.estado === estado).length;
+
+  const urgentes = casos.filter((c) => c.urgente).length;
+
+  const vencidos = casos.filter(
+    (c) =>
+      c.fecha_limite &&
+      new Date(c.fecha_limite).getTime() < new Date().getTime()
+  ).length;
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-6xl px-4 py-8">
-        <header className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="min-h-screen bg-slate-950 text-slate-50">
+
+      {/* -------------------------------- HEADER -------------------------------- */}
+      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+
+        {/* Logo + título */}
+        <div className="flex items-center gap-3">
+          <div className="bg-slate-700 text-white font-bold px-3 py-1.5 rounded-md text-lg tracking-wide">
+            BKC
+          </div>
+
           <div>
-            <h1 className="text-2xl font-semibold text-slate-900">
-              BKC Hipotecas · Portal de expedientes
-            </h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Revisa y accede a los expedientes de tus clientes. Usa el buscador y los filtros
-              para encontrar rápidamente lo que necesitas.
+            <h1 className="text-xl font-semibold">BKC Hipotecas</h1>
+            <p className="text-xs text-slate-400 -mt-0.5">
+              Panel de expedientes
             </p>
-          </div>
-
-          <Link
-            href="/portal/clients/new"
-            className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-emerald-700"
-          >
-            + Nuevo expediente
-          </Link>
-        </header>
-
-        {/* Filtros */}
-        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="relative max-w-md w-full">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nombre, DNI, teléfono, email o estado..."
-              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 pr-10 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-            <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-slate-400">
-              🔍
-            </span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <select
-              value={estadoFilter}
-              onChange={(e) =>
-                setEstadoFilter(e.target.value as 'todos' | string)
-              }
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            >
-              <option value="todos">Todos los estados</option>
-              {ESTADOS.map((e) => (
-                <option key={e.value} value={e.value}>
-                  {e.label}
-                </option>
-              ))}
-            </select>
-
-            <button
-              type="button"
-              onClick={handleClearFilters}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-600 hover:bg-slate-100"
-            >
-              Limpiar filtros
-            </button>
           </div>
         </div>
 
-        {loading && (
-          <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-            Cargando expedientes...
+        {/* Acciones rápidas */}
+        <div className="flex items-center gap-3">
+          <Link
+            href="/portal/clients/new"
+            className="bg-emerald-500 text-slate-950 px-4 py-2 rounded-md text-sm font-medium hover:bg-emerald-400"
+          >
+            + Nuevo expediente
+          </Link>
+
+          <div className="w-8 h-8 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center text-sm">
+            N
           </div>
-        )}
+        </div>
+      </header>
 
-        {error && !loading && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-            {error}
+      {/* -------------------------------- ESTADÍSTICAS -------------------------------- */}
+      <section className="px-6 py-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+
+        {ESTADOS.map((item) => (
+          <div
+            key={item.value}
+            className="rounded-lg bg-slate-900/60 border border-slate-800 p-3 text-center"
+          >
+            <p className="text-xs text-slate-400">{item.label}</p>
+            <p className="text-lg font-semibold text-slate-100">
+              {countByEstado(item.value)}
+            </p>
           </div>
-        )}
+        ))}
 
-        {!loading && !error && filteredCases.length === 0 && (
-          <div className="rounded-lg border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-            No se han encontrado expedientes con esos filtros.
+        {/* Urgentes */}
+        <div className="rounded-lg bg-red-950/40 border border-red-800 p-3 text-center">
+          <p className="text-xs text-red-300">Urgentes</p>
+          <p className="text-lg font-semibold text-red-400">{urgentes}</p>
+        </div>
+
+        {/* Vencidos */}
+        <div className="rounded-lg bg-orange-950/40 border border-orange-800 p-3 text-center">
+          <p className="text-xs text-orange-300">Vencidos</p>
+          <p className="text-lg font-semibold text-orange-400">
+            {vencidos}
+          </p>
+        </div>
+
+      </section>
+      {/* -------------------------------- BUSCADOR + FILTROS -------------------------------- */}
+      <section className="px-6 pb-6">
+
+        {/* Buscador */}
+        <div className="flex flex-col md:flex-row md:items-center gap-3 mb-3">
+
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por título, cliente, dirección…"
+            className="flex-1 rounded-md bg-slate-900 border border-slate-700 px-4 py-2 text-sm text-slate-50 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          />
+
+        </div>
+
+        {/* Filtros */}
+        <div className="flex flex-wrap items-center gap-2">
+
+          {/* Filtro por estado */}
+          <select
+            value={filterEstado ?? ''}
+            onChange={(e) =>
+              setFilterEstado(e.target.value === '' ? null : e.target.value)
+            }
+            className="rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+          >
+            <option value="">Todos los estados</option>
+            {ESTADOS.map((e) => (
+              <option key={e.value} value={e.value}>
+                {e.label}
+              </option>
+            ))}
+          </select>
+
+          {/* Filtro urgente */}
+          <button
+            onClick={() =>
+              setFilterUrgente(filterUrgente === true ? null : true)
+            }
+            className={`px-3 py-2 rounded-md text-xs border ${
+              filterUrgente
+                ? 'bg-red-600 border-red-700 text-white'
+                : 'bg-slate-900 border-slate-700 text-slate-300'
+            }`}
+          >
+            Urgentes
+          </button>
+
+          {/* Filtro vencidos */}
+          <button
+            onClick={() =>
+              setFilterVencido(filterVencido === true ? null : true)
+            }
+            className={`px-3 py-2 rounded-md text-xs border ${
+              filterVencido
+                ? 'bg-orange-600 border-orange-700 text-white'
+                : 'bg-slate-900 border-slate-700 text-slate-300'
+            }`}
+          >
+            Vencidos
+          </button>
+
+          {/* Reset filtros */}
+          <button
+            onClick={() => {
+              setFilterEstado(null);
+              setFilterUrgente(null);
+              setFilterVencido(null);
+              setSearch('');
+            }}
+            className="px-3 py-2 rounded-md border border-slate-700 text-xs text-slate-300 bg-slate-900 hover:bg-slate-800"
+          >
+            Limpiar filtros
+          </button>
+        </div>
+      </section>
+      {/* -------------------------------- TABLA PRO -------------------------------- */}
+      <section className="px-6 pb-20">
+        <div className="border border-slate-800 rounded-lg overflow-hidden">
+
+          {/* Cabecera tabla */}
+          <div className="bg-slate-900/80 px-4 py-3 grid grid-cols-6 text-xs text-slate-400 font-medium">
+            <div className="col-span-2">Expediente</div>
+            <div>Estado</div>
+            <div>Urgente</div>
+            <div>Fecha límite</div>
+            <div>Acciones</div>
           </div>
-        )}
 
-        {!loading && !error && filteredCases.length > 0 && (
-          <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-            <table className="min-w-full border-collapse text-sm">
-              <thead className="bg-slate-100">
-                <tr className="text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  <th className="px-4 py-3">Cliente / expediente</th>
-                  <th className="px-4 py-3">DNI</th>
-                  <th className="px-4 py-3">Teléfono</th>
-                  <th className="px-4 py-3">Email</th>
-                  <th className="px-4 py-3">Estado</th>
-                  <th className="px-4 py-3">Creado</th>
-                  <th className="px-4 py-3 text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredCases.map((item) => {
-                  const fecha =
-                    item.created_at
-                      ? new Date(item.created_at).toLocaleDateString('es-ES', {
-                          day: '2-digit',
-                          month: '2-digit',
-                          year: 'numeric',
-                        })
-                      : '-';
+          {/* Cuerpo */}
+          <div className="divide-y divide-slate-800">
 
-                  const nombreMostrar = getNombre(item);
+            {filtered.length === 0 && (
+              <div className="px-4 py-6 text-center text-slate-500 text-sm">
+                No hay expedientes que coincidan con los filtros.
+              </div>
+            )}
 
-                  return (
-                    <tr key={item.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-slate-900">
-                          {nombreMostrar}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {item.dni || '-'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {item.telefono || '-'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">
-                        {item.email || '-'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-                          {item.estado || 'Sin estado'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-700">{fecha}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex justify-end gap-2">
-                          <Link
-                            href={`/portal/case/${item.id}`}
-                            className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 shadow-sm hover:bg-slate-100"
-                          >
-                            Ver expediente
-                          </Link>
+            {filtered.map((c) => {
+              // Fecha límite → countdown
+              let fechaTexto = '-';
+              let fechaColor = 'text-slate-300';
 
-                          {item.seguimiento_token ? (
-                            <Link
-                              href={`/seguimiento/${item.seguimiento_token}`}
-                              className="inline-flex items-center rounded-md bg-emerald-600 px-2.5 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-700"
-                              target="_blank"
-                            >
-                              Ver como cliente
-                            </Link>
-                          ) : (
-                            <button
-                              type="button"
-                              className="inline-flex cursor-not-allowed items-center rounded-md bg-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-500"
-                              title="Este expediente aún no tiene enlace de seguimiento"
-                              disabled
-                            >
-                              Sin enlace
-                            </button>
-                          )}
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+              if (c.fecha_limite) {
+                const now = new Date().getTime();
+                const limit = new Date(c.fecha_limite).getTime();
+                const diff = limit - now;
+
+                const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+
+                if (days < 0) {
+                  fechaTexto = `Vencido (${Math.abs(days)} días)`;
+                  fechaColor = 'text-red-400';
+                } else if (days === 0) {
+                  fechaTexto = 'Hoy';
+                  fechaColor = 'text-orange-400';
+                } else if (days === 1) {
+                  fechaTexto = 'Mañana';
+                  fechaColor = 'text-yellow-400';
+                } else {
+                  fechaTexto = `En ${days} días`;
+                  fechaColor = 'text-slate-300';
+                }
+              }
+
+              // Estado → badge
+              const estadoBadge = {
+                en_estudio: 'bg-blue-900 text-blue-300 border-blue-700',
+                tasacion: 'bg-purple-900 text-purple-300 border-purple-700',
+                fein: 'bg-indigo-900 text-indigo-300 border-indigo-700',
+                notaria: 'bg-yellow-900 text-yellow-300 border-yellow-700',
+                compraventa: 'bg-green-900 text-green-300 border-green-700',
+                fin: 'bg-slate-700 text-slate-300 border-slate-600',
+                denegado: 'bg-red-900 text-red-300 border-red-700',
+              }[c.estado];
+
+              return (
+                <div
+                  key={c.id}
+                  className="grid grid-cols-6 items-center px-4 py-4 hover:bg-slate-900/40 text-sm"
+                >
+                  {/* EXPEDIENTE */}
+                  <div className="col-span-2">
+                    <p className="text-slate-100 font-medium">{c.titulo}</p>
+                    <p className="text-xs text-slate-500">
+                      Último movimiento:{' '}
+                      {new Date(c.updated_at).toLocaleDateString('es-ES')}
+                    </p>
+                  </div>
+
+                  {/* ESTADO */}
+                  <div>
+                    <span
+                      className={`px-2 py-1 text-xs rounded-md border ${estadoBadge}`}
+                    >
+                      {ESTADOS.find((e) => e.value === c.estado)?.label}
+                    </span>
+                  </div>
+
+                  {/* URGENTE */}
+                  <div>
+                    {c.urgente ? (
+                      <span className="px-2 py-1 text-xs rounded-md bg-red-700 text-white border border-red-800 animate-pulse">
+                        ¡Urgente!
+                      </span>
+                    ) : (
+                      <span className="text-slate-500 text-xs">-</span>
+                    )}
+                  </div>
+
+                  {/* FECHA LÍMITE */}
+                  <div>
+                    <span className={`text-xs ${fechaColor}`}>{fechaTexto}</span>
+                  </div>
+
+                  {/* ACCIONES */}
+                  <div className="flex gap-2 justify-end">
+
+                    {/* Abrir expediente */}
+                    <Link
+                      href={`/portal/case/${c.id}`}
+                      className="text-emerald-400 hover:text-emerald-300 text-xs"
+                    >
+                      Abrir
+                    </Link>
+
+                    {/* Marcar urgente / no urgente */}
+                    <button
+                      onClick={async () => {
+                        await supabase
+                          .from('casos')
+                          .update({ urgente: !c.urgente })
+                          .eq('id', c.id);
+
+                        // refrescar la lista
+                        const updated = casos.map((x) =>
+                          x.id === c.id ? { ...x, urgente: !c.urgente } : x
+                        );
+                        setCasos(updated);
+                      }}
+                      className="text-red-400 hover:text-red-300 text-xs"
+                    >
+                      {c.urgente ? 'Quitar' : 'Urgente'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        )}
-      </div>
+        </div>
+      </section>
     </div>
   );
 }
