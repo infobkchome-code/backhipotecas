@@ -527,6 +527,7 @@ export default function CaseDetailPage() {
     setDocsMsg(null);
   };
 
+  // 🔥 SUBIDA + MARCAR CHECKLIST AUTOMÁTICAMENTE
   const handleUpload = async () => {
     if (!fileToUpload) {
       setDocsMsg('Primero selecciona un archivo.');
@@ -541,6 +542,7 @@ export default function CaseDetailPage() {
     setDocsMsg(null);
 
     try {
+      // 1) Nombre seguro
       let safeName = fileToUpload.name
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
@@ -549,6 +551,7 @@ export default function CaseDetailPage() {
 
       const path = `${userId}/${caso.id}/${safeName}`;
 
+      // 2) Subir a Storage
       const { error: uploadError } = await supabase.storage
         .from('docs')
         .upload(path, fileToUpload, { upsert: true });
@@ -564,12 +567,13 @@ export default function CaseDetailPage() {
         return;
       }
 
+      // 3) Guardar metadatos en expediente_documentos
       const { data: docInsert, error: docError } = await supabase
         .from('expediente_documentos')
         .insert({
           caso_id: caso.id,
           user_id: userId,
-          tipo: docTipo,
+          tipo: docTipo, // 👈 importante para saber qué marcar
           nombre_archivo: safeName,
           storage_path: path,
         })
@@ -588,6 +592,7 @@ export default function CaseDetailPage() {
 
       setFileToUpload(null);
 
+      // 4) Crear log de movimiento
       const { error: logError } = await supabase.from('expediente_logs').insert({
         caso_id: caso.id,
         user_id: userId,
@@ -608,6 +613,15 @@ export default function CaseDetailPage() {
         if (!logsError && logsData) {
           setLogs(logsData as LogItem[]);
         }
+      }
+
+      // 5) 🔥 Marcar checklist automáticamente según el tipo subido
+      const itemsToMark = checklist.filter(
+        (item) => item.doc?.tipo === docTipo && !item.completado
+      );
+
+      for (const item of itemsToMark) {
+        await handleToggleChecklist(item);
       }
     } catch (e) {
       console.error(e);
