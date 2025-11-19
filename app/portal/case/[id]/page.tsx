@@ -41,6 +41,20 @@ type NotaItem = {
   user_id: string | null;
 };
 
+// ✅ NUEVO: item del checklist documental
+type ChecklistItem = {
+  id: string; // id de casos_documentos_requeridos
+  completado: boolean;
+  completado_en: string | null;
+  doc: {
+    id: string;
+    tipo: string;
+    descripcion: string | null;
+    obligatorio: boolean;
+    orden: number | null;
+  } | null;
+};
+
 const ESTADOS = [
   { value: 'en_estudio', label: 'En estudio' },
   { value: 'tasacion', label: 'Tasación' },
@@ -53,12 +67,23 @@ const ESTADOS = [
 
 const DOC_TIPOS = [
   { value: 'dni', label: 'DNI / NIE' },
-  { value: 'nomina', label: 'Nómina' },
-  { value: 'contrato', label: 'Contrato de trabajo' },
+  { value: 'nominas', label: 'Nómina(s)' },
+  { value: 'contrato_trabajo', label: 'Contrato de trabajo' },
   { value: 'vida_laboral', label: 'Vida laboral' },
-  { value: 'irpf', label: 'IRPF / Renta' },
-  { value: 'tasacion', label: 'Tasación' },
-  { value: 'fein', label: 'FEIN / Oferta' },
+  { value: 'renta', label: 'IRPF / Renta' },
+  { value: 'modelo_130', label: 'Modelo 130' },
+  { value: 'modelo_303', label: 'Modelo 303' },
+  { value: 'modelo_390', label: 'Modelo 390' },
+  { value: 'modelo_347', label: 'Modelo 347' },
+  { value: 'libro_ingresos_gastos', label: 'Libro ingresos/gastos' },
+  { value: 'escrituras', label: 'Escrituras' },
+  { value: 'cif', label: 'CIF' },
+  { value: 'cuentas_anuales', label: 'Cuentas anuales' },
+  { value: 'balance', label: 'Balance / PyG' },
+  { value: 'certificados_aeat', label: 'Certificados AEAT' },
+  { value: 'cert_ss', label: 'Certificado SS' },
+  { value: 'extractos', label: 'Extractos bancarios' },
+  { value: 'documento_ingresos_especiales', label: 'Ingresos especiales' },
   { value: 'otros', label: 'Otros' },
 ];
 
@@ -99,6 +124,98 @@ export default function CaseDetailPage() {
 
   // feedback copiar enlace
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
+
+  // ✅ Checklist
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
+  const [checklistLoading, setChecklistLoading] = useState(false);
+  const [checklistError, setChecklistError] = useState<string | null>(null);
+
+  // ----------------------------------------------------------
+  // Helpers
+  // ----------------------------------------------------------
+
+  // Cargar checklist documental para un caso
+  const loadChecklist = async (casoId: string) => {
+    setChecklistLoading(true);
+    setChecklistError(null);
+
+    const { data, error } = await supabase
+      .from('casos_documentos_requeridos')
+      .select(
+        `
+        id,
+        completado,
+        completado_en,
+        doc:documentos_requeridos (
+          id,
+          tipo,
+          descripcion,
+          obligatorio,
+          orden
+        )
+      `
+      )
+      .eq('caso_id', casoId);
+
+    if (error) {
+      console.error('Error cargando checklist:', error);
+      setChecklistError('No se pudo cargar el checklist de documentación.');
+      setChecklistLoading(false);
+      return;
+    }
+
+    const items = (data as ChecklistItem[]) || [];
+    // Ordenar por orden y luego por obligatorio
+    const ordered = [...items].sort((a, b) => {
+      const oa = a.doc?.orden ?? 999;
+      const ob = b.doc?.orden ?? 999;
+      if (oa !== ob) return oa - ob;
+      // Obligatorios primero
+      const sa = a.doc?.obligatorio ? 0 : 1;
+      const sb = b.doc?.obligatorio ? 0 : 1;
+      return sa - sb;
+    });
+
+    setChecklist(ordered);
+    setChecklistLoading(false);
+  };
+
+  // Toggle de completado en un ítem de checklist
+  const handleToggleChecklist = async (item: ChecklistItem) => {
+    if (!item?.id) return;
+
+    const nuevoEstado = !item.completado;
+
+    const { error } = await supabase
+      .from('casos_documentos_requeridos')
+      .update({
+        completado: nuevoEstado,
+        completado_por: nuevoEstado ? userId : null,
+        completado_en: nuevoEstado ? new Date().toISOString() : null,
+      })
+      .eq('id', item.id);
+
+    if (error) {
+      console.error('Error actualizando checklist:', error);
+      setChecklistError('No se pudo actualizar el estado del documento.');
+      return;
+    }
+
+    // Actualizar en memoria
+    setChecklist((prev) =>
+      prev.map((c) =>
+        c.id === item.id
+          ? {
+              ...c,
+              completado: nuevoEstado,
+              completado_en: nuevoEstado
+                ? new Date().toISOString()
+                : null,
+            }
+          : c
+      )
+    );
+  };
 
   // ----------------------------------------------------------
   // Cargar datos iniciales: expediente, logs y notas internas
@@ -180,6 +297,9 @@ export default function CaseDetailPage() {
       if (!notasError && notasData) {
         setNotasLista(notasData as NotaItem[]);
       }
+
+      // ✅ Checklist
+      await loadChecklist(c.id);
 
       setLoading(false);
     };
@@ -366,6 +486,9 @@ export default function CaseDetailPage() {
           setLogs(logsData as LogItem[]);
         }
       }
+
+      // (Opcional futuro) aquí podríamos marcar como completado el checklist si coincide tipo
+      // de documento con el tipo requerido.
     } catch (e) {
       console.error(e);
       setDocsMsg('Error inesperado subiendo el documento.');
@@ -496,6 +619,10 @@ export default function CaseDetailPage() {
     ).toLocaleDateString('es-ES')}`;
   }
 
+  // Datos checklist
+  const totalDocs = checklist.length;
+  const completados = checklist.filter((c) => c.completado).length;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
       {/* Barra superior */}
@@ -544,6 +671,11 @@ export default function CaseDetailPage() {
         {copyMsg && (
           <div className="rounded-md border border-emerald-600 bg-emerald-950/60 px-4 py-2 text-xs text-emerald-100">
             {copyMsg}
+          </div>
+        )}
+        {checklistError && (
+          <div className="rounded-md border border-amber-600 bg-amber-950/60 px-4 py-2 text-xs text-amber-100">
+            {checklistError}
           </div>
         )}
 
@@ -656,7 +788,7 @@ export default function CaseDetailPage() {
         {/* Documentos por tipo */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
           <h2 className="text-sm font-semibold text-slate-200">
-            Documentación del expediente
+            Documentación del expediente (archivos)
           </h2>
 
           {docsMsg && (
@@ -763,6 +895,119 @@ export default function CaseDetailPage() {
               </tbody>
             </table>
           </div>
+        </section>
+
+        {/* ✅ CHECKLIST DOCUMENTAL EN TARJETAS */}
+        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-slate-200">
+                Checklist de documentación para el estudio
+              </h2>
+              <p className="text-xs text-slate-400">
+                Documentos que necesita este expediente según el tipo de
+                cliente. No se muestra al cliente.
+              </p>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-slate-300">
+                Completados:{' '}
+                <span className="font-semibold text-emerald-400">
+                  {completados}/{totalDocs}
+                </span>
+              </p>
+            </div>
+          </div>
+
+          {checklistLoading && (
+            <div className="text-xs text-slate-400">
+              Cargando checklist de documentación…
+            </div>
+          )}
+
+          {!checklistLoading && checklist.length === 0 && (
+            <p className="text-xs text-slate-500">
+              Este expediente todavía no tiene checklist asignado.
+            </p>
+          )}
+
+          {!checklistLoading && checklist.length > 0 && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {checklist.map((item) => {
+                const obligatorio = item.doc?.obligatorio ?? false;
+                const nombreDoc =
+                  item.doc?.descripcion ||
+                  DOC_TIPOS.find((t) => t.value === item.doc?.tipo)?.label ||
+                  item.doc?.tipo ||
+                  'Documento';
+
+                return (
+                  <div
+                    key={item.id}
+                    className={`rounded-lg border px-3 py-3 text-xs flex flex-col gap-2 ${
+                      item.completado
+                        ? 'border-emerald-600 bg-emerald-950/30'
+                        : obligatorio
+                        ? 'border-slate-700 bg-slate-900'
+                        : 'border-slate-800 bg-slate-950/60'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div>
+                        <p className="text-slate-100 font-medium">
+                          {nombreDoc}
+                        </p>
+                        {item.completado_en && (
+                          <p className="text-[10px] text-slate-400 mt-1">
+                            Marcado como completo el{' '}
+                            {new Date(
+                              item.completado_en
+                            ).toLocaleString('es-ES')}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex flex-col items-end gap-1">
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] border ${
+                            obligatorio
+                              ? 'border-amber-400 text-amber-200 bg-amber-500/10'
+                              : 'border-slate-500 text-slate-300 bg-slate-800/60'
+                          }`}
+                        >
+                          {obligatorio ? 'Obligatorio' : 'Opcional'}
+                        </span>
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] border ${
+                            item.completado
+                              ? 'border-emerald-400 text-emerald-200 bg-emerald-600/10'
+                              : 'border-slate-500 text-slate-300 bg-slate-800/60'
+                          }`}
+                        >
+                          {item.completado ? 'Completado' : 'Pendiente'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleChecklist(item)}
+                        className={`px-3 py-1.5 rounded-md text-[11px] font-medium border ${
+                          item.completado
+                            ? 'border-slate-600 text-slate-200 bg-slate-900 hover:bg-slate-800'
+                            : 'border-emerald-500 text-emerald-100 bg-emerald-600/20 hover:bg-emerald-500/30'
+                        }`}
+                      >
+                        {item.completado
+                          ? 'Marcar como pendiente'
+                          : 'Marcar como completo'}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </section>
 
         {/* Enlace seguimiento */}
