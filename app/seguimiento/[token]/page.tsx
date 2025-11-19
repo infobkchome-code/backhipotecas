@@ -259,13 +259,49 @@ export default function SeguimientoPage() {
         setDocsCliente(docsData as DocumentoCliente[]);
       }
 
-      setUploadMsgCliente('Documento subido correctamente.');
+    setUploadMsgCliente('Documento subido correctamente.');
 
-      setTimeout(() => {
-        setDocToUpload(null);
-        setFileCliente(null);
-        setUploadMsgCliente(null);
-      }, 1200);
+// 🔥 1. Volvemos a cargar checklist y docs antes de cerrar el modal
+await Promise.all([
+  (async () => {
+    const { data: checklistData } = await supabase
+      .from('casos_documentos_requeridos')
+      .select(`
+        id,
+        completado,
+        completado_en,
+        doc:documentos_requeridos (
+          id,
+          tipo,
+          descripcion,
+          obligatorio,
+          orden
+        )
+      `)
+      .eq('caso_id', caso.id);
+
+    if (checklistData) setChecklist(checklistData);
+  })(),
+
+  (async () => {
+    const { data: docsData } = await supabase
+      .from('expediente_documentos')
+      .select('id, nombre_archivo, storage_path, created_at, tipo')
+      .eq('caso_id', caso.id)
+      .is('user_id', null)
+      .order('created_at', { ascending: false });
+
+    if (docsData) setDocsCliente(docsData);
+  })(),
+]);
+
+// 🔥 2. Ahora sí cerramos el modal
+setTimeout(() => {
+  setDocToUpload(null);
+  setFileCliente(null);
+  setUploadMsgCliente(null);
+}, 800);
+
     } catch (e) {
       console.error(e);
       setUploadMsgCliente('Error inesperado.');
