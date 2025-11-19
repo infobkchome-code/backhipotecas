@@ -13,8 +13,16 @@ type SeguimientoCaso = {
   updated_at: string;
 };
 
+type LogItem = {
+  id: string;
+  created_at: string;
+  tipo: string;
+  descripcion: string | null;
+};
+
 type ApiResponse = {
   data?: SeguimientoCaso;
+  logs?: LogItem[];
   error?: string;
 };
 
@@ -33,6 +41,7 @@ export default function SeguimientoPage() {
   const token = params?.token;
 
   const [caso, setCaso] = useState<SeguimientoCaso | null>(null);
+  const [logs, setLogs] = useState<LogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -73,6 +82,7 @@ export default function SeguimientoPage() {
         }
 
         setCaso(json.data);
+        setLogs(json.logs ?? []);
         setLoading(false);
       } catch (err) {
         console.error(err);
@@ -153,6 +163,42 @@ export default function SeguimientoPage() {
                 {caso.notas}
               </p>
             </div>
+          )}
+        </section>
+
+        {/* Timeline visible para cliente */}
+        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-slate-200">
+            Historial de tu expediente
+          </h2>
+          <p className="text-xs text-slate-400">
+            Aquí puedes ver los principales hitos: cambios de estado, avance y
+            documentación añadida.
+          </p>
+
+          {logs.length === 0 ? (
+            <p className="text-xs text-slate-500">
+              Aún no hay movimientos registrados visibles para este expediente.
+            </p>
+          ) : (
+            <ul className="space-y-2 text-xs">
+              {logs.map((log) => (
+                <li
+                  key={log.id}
+                  className="flex gap-3 border-b border-slate-800 pb-2 last:border-b-0 last:pb-0"
+                >
+                  <div className="mt-0.5 h-2 w-2 rounded-full bg-emerald-500" />
+                  <div>
+                    <div className="text-slate-300">
+                      {log.descripcion || log.tipo}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-0.5">
+                      {new Date(log.created_at).toLocaleString('es-ES')}
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </section>
 
