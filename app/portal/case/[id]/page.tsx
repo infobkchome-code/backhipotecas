@@ -29,6 +29,13 @@ type LogItem = {
   visible_cliente: boolean;
 };
 
+type NotaItem = {
+  id: string;
+  contenido: string;
+  created_at: string;
+  user_id: string | null;
+};
+
 const ESTADOS = [
   { value: 'en_estudio', label: 'En estudio' },
   { value: 'tasacion', label: 'Tasación' },
@@ -61,22 +68,29 @@ export default function CaseDetailPage() {
   const [uploading, setUploading] = useState(false);
   const [docsMsg, setDocsMsg] = useState<string | null>(null);
 
-  // Historial
+  // Logs
   const [logs, setLogs] = useState<LogItem[]>([]);
 
-  // userId para Storage y logs
+  // Notas internas tipo chat
+  const [notasLista, setNotasLista] = useState<NotaItem[]>([]);
+  const [nuevaNota, setNuevaNota] = useState('');
+
+  // userId
   const [userId, setUserId] = useState<string | null>(null);
 
   // feedback copiar enlace
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
 
-  // Cargar caso y logs
+  // ----------------------------------------------------------
+  // Cargar datos iniciales: expediente, logs y notas internas
+  // ----------------------------------------------------------
   useEffect(() => {
-    const fetchCaseAndLogs = async () => {
+    const fetchCaseData = async () => {
       setLoading(true);
       setErrorMsg(null);
       setSuccessMsg(null);
 
+      // Obtener usuario
       const {
         data: { user },
         error: userError,
@@ -90,24 +104,21 @@ export default function CaseDetailPage() {
 
       setUserId(user.id);
 
-      // Caso
-      const { data, error } = await supabase
+      // Cargar expediente
+      const { data: casoData, error: casoError } = await supabase
         .from('casos')
         .select('*')
         .eq('id', id)
         .eq('user_id', user.id)
         .single();
 
-      if (error || !data) {
-        console.error(error);
-        setErrorMsg(
-          'No se ha encontrado este expediente o no tienes permisos para verlo.'
-        );
+      if (casoError || !casoData) {
+        setErrorMsg('No se ha encontrado el expediente.');
         setLoading(false);
         return;
       }
 
-      const c = data as any;
+      const c = casoData as any;
 
       const casoNormalizado: Caso = {
         id: c.id,
@@ -125,61 +136,60 @@ export default function CaseDetailPage() {
       setProgreso(casoNormalizado.progreso);
       setNotas(casoNormalizado.notas ?? '');
 
-      // Logs internos (todos)
-      const { data: logsData, error: logsError } = await supabase
+      // Logs internos
+      const { data: logsData } = await supabase
         .from('expediente_logs')
-        .select('id, created_at, tipo, descripcion, visible_cliente')
+        .select('*')
         .eq('caso_id', c.id)
         .order('created_at', { ascending: false });
 
-      if (logsError) {
-        console.error('Error cargando logs:', logsError);
-      } else {
-        setLogs((logsData as LogItem[]) ?? []);
-      }
+      if (logsData) setLogs(logsData as LogItem[]);
+
+      // Notas internas
+      const { data: notasData } = await supabase
+        .from('expediente_notas')
+        .select('*')
+        .eq('caso_id', c.id)
+        .order('created_at', { ascending: true });
+
+      if (notasData) setNotasLista(notasData as NotaItem[]);
 
       setLoading(false);
     };
 
-    if (id) {
-      fetchCaseAndLogs();
-    }
+    if (id) fetchCaseData();
   }, [id]);
 
+  // ----------------------------------------------------------
   // Cargar documentos
+  // ----------------------------------------------------------
   useEffect(() => {
+    if (!userId || !id) return;
+
     const loadDocs = async () => {
-      if (!userId || !id) return;
-
-      setDocsMsg(null);
-
       const prefix = `${userId}/${id}`;
       const { data, error } = await supabase.storage
         .from('docs')
-        .list(prefix, {
-          limit: 100,
-          offset: 0,
-        });
+        .list(prefix, { limit: 100, offset: 0 });
 
       if (error) {
-        console.error('Error listando docs:', error);
-        setDocsMsg('No se han podido cargar los documentos.');
+        setDocsMsg('No se pudieron cargar los documentos.');
         return;
       }
 
-      const mapped: FileItem[] =
-        data?.map((f) => ({
-          name: f.name,
-          created_at: f.created_at ?? null,
-        })) ?? [];
+      const mapped = data?.map((f) => ({
+        name: f.name,
+        created_at: f.created_at ?? null,
+      })) ?? [];
 
       setFiles(mapped);
     };
 
     loadDocs();
   }, [userId, id]);
-
-  // Guardar cambios (estado, progreso, notas) – el trigger ya loguea
+  // ----------------------------------------------------------
+  // Guardar estado, progreso y notas (trigger crea logs)
+  // ----------------------------------------------------------
   const handleSave = async () => {
     if (!caso) return;
     setSaving(true);
@@ -188,11 +198,10 @@ export default function CaseDetailPage() {
 
     const {
       data: { user },
-      error: userError,
     } = await supabase.auth.getUser();
 
-    if (userError || !user) {
-      setErrorMsg('Sesión no válida. Vuelve a iniciar sesión.');
+    if (!user) {
+      setErrorMsg('Sesión no válida.');
       setSaving(false);
       return;
     }
@@ -208,7 +217,6 @@ export default function CaseDetailPage() {
       .eq('user_id', user.id);
 
     if (error) {
-      console.error(error);
       setErrorMsg('No se han podido guardar los cambios.');
       setSaving(false);
       return;
@@ -216,35 +224,37 @@ export default function CaseDetailPage() {
 
     setSuccessMsg('Cambios guardados correctamente.');
 
-    // Recargar logs para ver los nuevos registros del trigger
-    const { data: logsData, error: logsError } = await supabase
+    // Recargar logs
+    const { data: logsData } = await supabase
       .from('expediente_logs')
-      .select('id, created_at, tipo, descripcion, visible_cliente')
+      .select('*')
       .eq('caso_id', caso.id)
       .order('created_at', { ascending: false });
 
-    if (!logsError && logsData) {
-      setLogs(logsData as LogItem[]);
-    }
+    if (logsData) setLogs(logsData as LogItem[]);
 
     setSaving(false);
   };
 
-  // Cambiar archivo
+  // ----------------------------------------------------------
+  // Manejar archivo seleccionado
+  // ----------------------------------------------------------
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] ?? null;
-    setFileToUpload(file);
+    const f = e.target.files?.[0] ?? null;
+    setFileToUpload(f);
     setDocsMsg(null);
   };
 
-  // Subida + log documento (con limpieza fuerte del nombre)
+  // ----------------------------------------------------------
+  // Subir documento con limpieza del nombre y log
+  // ----------------------------------------------------------
   const handleUpload = async () => {
     if (!fileToUpload) {
       setDocsMsg('Primero selecciona un archivo.');
       return;
     }
     if (!userId || !caso) {
-      setDocsMsg('Sesión no válida. Vuelve a iniciar sesión.');
+      setDocsMsg('Sesión no válida.');
       return;
     }
 
@@ -252,112 +262,114 @@ export default function CaseDetailPage() {
     setDocsMsg(null);
 
     try {
-      // Limpieza fuerte del nombre para evitar errores en Supabase Storage
+      // Limpieza profunda del nombre
       let safeName = fileToUpload.name
-        .normalize('NFD')                     // separa acentos
-        .replace(/[\u0300-\u036f]/g, '')      // elimina acentos
-        .replace(/[^a-zA-Z0-9._-]/g, '_')     // solo permite letras/números/._-
-        .replace(/_+/g, '_');                 // colapsa múltiples _
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-zA-Z0-9._-]/g, '_')
+        .replace(/_+/g, '_');
 
       const path = `${userId}/${caso.id}/${safeName}`;
 
-      // Subir archivo (upsert: true para no fallar si ya existe)
       const { error: uploadError } = await supabase.storage
         .from('docs')
-        .upload(path, fileToUpload, {
-          upsert: true,
-        });
+        .upload(path, fileToUpload, { upsert: true });
 
       if (uploadError) {
-        console.error('Error subiendo archivo:', uploadError);
         setDocsMsg(
-          `No se ha podido subir el documento: ${
-            uploadError.message ?? ''
-          }`
+          `No se ha podido subir el documento: ${uploadError.message ?? ''}`
         );
         setUploading(false);
         return;
       }
 
-      // Recargar lista de documentos
-      const { data, error: listError } = await supabase.storage
+      // Recargar documentos
+      const { data } = await supabase.storage
         .from('docs')
-        .list(`${userId}/${caso.id}`, {
-          limit: 100,
-          offset: 0,
-        });
+        .list(`${userId}/${caso.id}`);
 
-      if (listError) {
-        console.error('Error recargando docs:', listError);
-        setDocsMsg(
-          'Documento subido, pero no se pudo refrescar la lista de documentos.'
-        );
-      } else {
-        const mapped: FileItem[] =
-          data?.map((f) => ({
-            name: f.name,
-            created_at: f.created_at ?? null,
-          })) ?? [];
+      const mapped =
+        data?.map((f) => ({
+          name: f.name,
+          created_at: f.created_at ?? null,
+        })) ?? [];
 
-        setFiles(mapped);
-        setDocsMsg('Documento subido correctamente.');
-      }
-
+      setFiles(mapped);
+      setDocsMsg('Documento subido correctamente.');
       setFileToUpload(null);
 
-      // Intentar crear log (si la tabla existe)
-      try {
-        const { error: logError } = await supabase.from('expediente_logs').insert({
-          caso_id: caso.id,
-          user_id: userId,
-          tipo: 'documento',
-          descripcion: `Documento añadido: ${safeName}`,
-          visible_cliente: true,
-        });
+      // Crear log (no obligatorio)
+      await supabase.from('expediente_logs').insert({
+        caso_id: caso.id,
+        user_id: userId,
+        tipo: 'documento',
+        descripcion: `Documento añadido: ${safeName}`,
+        visible_cliente: true,
+      });
 
-        if (logError) {
-          console.error('Error creando log de documento:', logError);
-        } else {
-          const { data: logsData, error: logsReloadError } = await supabase
-            .from('expediente_logs')
-            .select('id, created_at, tipo, descripcion, visible_cliente')
-            .eq('caso_id', caso.id)
-            .order('created_at', { ascending: false });
+      // Recargar logs
+      const { data: logsData } = await supabase
+        .from('expediente_logs')
+        .select('*')
+        .eq('caso_id', caso.id)
+        .order('created_at', { ascending: false });
 
-          if (!logsReloadError && logsData) {
-            setLogs(logsData as LogItem[]);
-          }
-        }
-      } catch (e) {
-        console.error('Error inesperado creando log de documento:', e);
-      }
-    } catch (err: any) {
-      console.error('Error general en subida:', err);
+      if (logsData) setLogs(logsData as LogItem[]);
+    } catch (e) {
       setDocsMsg('Error inesperado subiendo el documento.');
     } finally {
       setUploading(false);
     }
   };
 
-  // Descargar
+  // ----------------------------------------------------------
+  // Descargar documento
+  // ----------------------------------------------------------
   const handleDownload = async (fileName: string) => {
     if (!userId || !caso) return;
-    const path = `${userId}/${caso.id}/${fileName}`;
 
+    const path = `${userId}/${caso.id}/${fileName}`;
     const { data, error } = await supabase.storage
       .from('docs')
       .createSignedUrl(path, 60 * 10);
 
     if (error || !data?.signedUrl) {
-      console.error('Error creando signed URL:', error);
-      setDocsMsg('No se ha podido descargar el documento.');
+      setDocsMsg('No se pudo descargar el documento.');
       return;
     }
 
     window.open(data.signedUrl, '_blank');
   };
 
+  // ----------------------------------------------------------
+  // Añadir nota interna tipo chat
+  // ----------------------------------------------------------
+  const handleAddNota = async () => {
+    if (!nuevaNota.trim() || !caso) return;
+
+    const text = nuevaNota.trim();
+    setNuevaNota('');
+
+    // Crear nota
+    await supabase.from('expediente_notas').insert({
+      caso_id: caso.id,
+      user_id: userId,
+      contenido: text,
+    });
+
+    // Recargar notas
+    const { data } = await supabase
+      .from('expediente_notas')
+      .select('*')
+      .eq('caso_id', caso.id)
+      .order('created_at', { ascending: true });
+
+    if (data) setNotasLista(data as NotaItem[]);
+  };
+
+  // ----------------------------------------------------------
   // Copiar enlace de seguimiento
+  // ----------------------------------------------------------
   const handleCopyLink = async () => {
     if (!caso?.seguimiento_token) return;
 
@@ -370,15 +382,16 @@ export default function CaseDetailPage() {
 
     try {
       await navigator.clipboard.writeText(fullUrl);
-      setCopyMsg('Enlace copiado al portapapeles.');
+      setCopyMsg('Enlace copiado.');
       setTimeout(() => setCopyMsg(null), 2000);
-    } catch (e) {
-      console.error(e);
-      setCopyMsg('No se ha podido copiar el enlace.');
+    } catch {
+      setCopyMsg('No se pudo copiar.');
       setTimeout(() => setCopyMsg(null), 2000);
     }
   };
-
+  // ----------------------------------------------------------
+  // Render
+  // ----------------------------------------------------------
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
@@ -434,7 +447,7 @@ export default function CaseDetailPage() {
       </header>
 
       <main className="max-w-4xl mx-auto px-6 py-6 space-y-6">
-        {/* Mensajes */}
+        {/* Mensajes globales */}
         {errorMsg && (
           <div className="rounded-md border border-red-600 bg-red-950/60 px-4 py-2 text-sm text-red-100">
             {errorMsg}
@@ -491,17 +504,15 @@ export default function CaseDetailPage() {
             <div className="mt-1 h-2 w-full bg-slate-800 rounded-full overflow-hidden">
               <div
                 className="h-2 bg-emerald-500 transition-all"
-                style={{
-                  width: `${Math.min(100, Math.max(0, progreso))}%`,
-                }}
+                style={{ width: `${Math.min(100, Math.max(0, progreso))}%` }}
               />
             </div>
           </div>
 
-          {/* Notas */}
+          {/* Notas resumen */}
           <div>
             <label className="block text-xs font-medium text-slate-400 mb-1">
-              Notas internas
+              Nota interna de resumen
             </label>
             <textarea
               rows={4}
@@ -681,13 +692,64 @@ export default function CaseDetailPage() {
                     </div>
                     <div className="text-[10px] text-slate-500 mt-0.5">
                       {new Date(log.created_at).toLocaleString('es-ES')}{' '}
-                      {log.visible_cliente ? '· Visible para cliente' : '· Solo interno'}
+                      {log.visible_cliente
+                        ? '· Visible para cliente'
+                        : '· Solo interno'}
                     </div>
                   </div>
                 </li>
               ))}
             </ul>
           )}
+        </section>
+
+        {/* Notas internas tipo chat */}
+        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-slate-200">
+            Notas internas del gestor
+          </h2>
+          <p className="text-xs text-slate-400">
+            Conversación interna sobre el expediente. Sólo la ves tú y tu
+            equipo, nunca el cliente.
+          </p>
+
+          <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+            {notasLista.length === 0 && (
+              <p className="text-xs text-slate-500">
+                Todavía no hay notas internas.
+              </p>
+            )}
+
+            {notasLista.map((nota) => (
+              <div
+                key={nota.id}
+                className="rounded-md bg-slate-800/60 px-3 py-2 text-xs text-slate-100"
+              >
+                <p>{nota.contenido}</p>
+                <p className="text-[10px] text-slate-500 mt-1">
+                  {new Date(nota.created_at).toLocaleString('es-ES')}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <input
+              type="text"
+              value={nuevaNota}
+              onChange={(e) => setNuevaNota(e.target.value)}
+              placeholder="Escribe una nota interna…"
+              className="flex-1 rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            />
+            <button
+              type="button"
+              onClick={handleAddNota}
+              disabled={!nuevaNota.trim()}
+              className="px-4 py-2 rounded-md bg-emerald-500 text-xs font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Añadir nota
+            </button>
+          </div>
         </section>
       </main>
     </div>
