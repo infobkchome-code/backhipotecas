@@ -15,12 +15,13 @@ type Caso = {
   urgente: boolean;
   fecha_limite: string | null;
   updated_at: string;
-  // 👇 datos de checklist
+  // checklist
   docs_total?: number;
   docs_completados?: number;
+  // prioridad manual
+  prioridad_manual_alta?: boolean | null;
 };
 
-// Estados para contadores
 const ESTADOS = [
   { value: 'en_estudio', label: 'En estudio' },
   { value: 'tasacion', label: 'Tasación' },
@@ -31,7 +32,93 @@ const ESTADOS = [
   { value: 'denegado', label: 'Denegado' },
 ];
 
-type SortMode = 'default' | 'docs' | 'urgentes';
+type SortMode = 'default' | 'docs' | 'prioridad';
+
+type PrioridadNivel = 'baja' | 'media' | 'alta' | 'critica';
+
+type PrioridadInfo = {
+  score: number;
+  nivel: PrioridadNivel;
+  label: string;
+};
+
+// -----------------------------
+// Cálculo de prioridad automática + manual
+// -----------------------------
+function calcularPrioridad(c: Caso): PrioridadInfo {
+  let score = 0;
+  const now = Date.now();
+  const msDia = 1000 * 60 * 60 * 24;
+
+  // 1) Urgente
+  if (c.urgente) score += 40;
+
+  // 2) Fecha límite
+  if (c.fecha_limite) {
+    const limit = new Date(c.fecha_limite).getTime();
+    const diffDias = Math.ceil((limit - now) / msDia);
+
+    if (diffDias < 0) {
+      // vencido
+      score += 30;
+    } else if (diffDias <= 2) {
+      score += 25;
+    } else if (diffDias <= 5) {
+      score += 15;
+    }
+  }
+
+  // 3) Documentación
+  const totalDocs = c.docs_total ?? 0;
+  const doneDocs = c.docs_completados ?? 0;
+  if (totalDocs > 0) {
+    const ratio = doneDocs / totalDocs;
+    if (ratio === 0) score += 20;
+    else if (ratio < 0.5) score += 15;
+    else if (ratio < 1) score += 5;
+  }
+
+  // 4) Días sin movimiento
+  if (c.updated_at) {
+    const updated = new Date(c.updated_at).getTime();
+    const diasSinMover = (now - updated) / msDia;
+    if (diasSinMover > 10) score += 10;
+    else if (diasSinMover > 5) score += 5;
+  }
+
+  // 5) Estado “crítico”
+  if (
+    c.estado === 'tasacion' ||
+    c.estado === 'fein' ||
+    c.estado === 'notaria' ||
+    c.estado === 'compraventa'
+  ) {
+    score += 10;
+  }
+
+  // 6) Prioridad manual alta (override)
+  if (c.prioridad_manual_alta) {
+    const manualScore = 80;
+    if (manualScore > score) score = manualScore;
+  }
+
+  // Nivel
+  let nivel: PrioridadNivel = 'baja';
+  if (score >= 80) nivel = 'critica';
+  else if (score >= 60) nivel = 'alta';
+  else if (score >= 30) nivel = 'media';
+
+  const label =
+    nivel === 'critica'
+      ? 'Crítica'
+      : nivel === 'alta'
+      ? 'Alta'
+      : nivel === 'media'
+      ? 'Media'
+      : 'Baja';
+
+  return { score, nivel, label };
+}
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
@@ -39,7 +126,7 @@ export default function DashboardPage() {
   const [filtered, setFiltered] = useState<Caso[]>([]);
   const [search, setSearch] = useState('');
 
-  // Filtros simples
+  // Filtros
   const [filterEstado, setFilterEstado] = useState<string | null>(null);
   const [filterUrgente, setFilterUrgente] = useState<boolean | null>(null);
   const [filterVencido, setFilterVencido] = useState<boolean | null>(null);
@@ -73,7 +160,8 @@ export default function DashboardPage() {
           progreso,
           urgente,
           fecha_limite,
-          updated_at
+          updated_at,
+          prioridad_manual_alta
         `
         )
         .eq('user_id', user.id)
@@ -87,7 +175,7 @@ export default function DashboardPage() {
 
       const casosBase = data as Caso[];
 
-      // 2) Cargar checklist de todos los casos (en bloque)
+      // 2) Cargar checklist en bloque
       const caseIds = casosBase.map((c) => c.id);
       let casosConDocs: Caso[] = casosBase;
 
@@ -187,25 +275,24 @@ export default function DashboardPage() {
         const pb = tb > 0 ? cb / tb : 0;
         // Menos documentación primero
         if (pa !== pb) return pa - pb;
-        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+        return (
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        );
       }
 
-      if (sortMode === 'urgentes') {
-        // Urgentes primero, luego por fecha límite más próxima
-        const ua = a.urgente ? 1 : 0;
-        const ub = b.urgente ? 1 : 0;
-        if (ua !== ub) return ub - ua;
-
-        const la = a.fecha_limite ? new Date(a.fecha_limite).getTime() : Infinity;
-        const lb = b.fecha_limite ? new Date(b.fecha_limite).getTime() : Infinity;
-
-        if (la !== lb) return la - lb;
-
-        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      if (sortMode === 'prioridad') {
+        const pa = calcularPrioridad(a).score;
+        const pb = calcularPrioridad(b).score;
+        if (pa !== pb) return pb - pa;
+        return (
+          new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+        );
       }
 
       // default: últimos actualizados primero
-      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      return (
+        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
+      );
     });
 
     setFiltered(results);
@@ -378,10 +465,10 @@ export default function DashboardPage() {
             Docs pendientes
           </button>
 
-          {/* Separador visual */}
+          {/* Separador */}
           <span className="mx-2 h-6 w-px bg-slate-700 hidden md:inline-block" />
 
-          {/* Orden: por defecto / docs / urgentes */}
+          {/* Orden: por defecto / docs / prioridad */}
           <button
             onClick={() => setSortMode('default')}
             className={`px-3 py-2 rounded-md text-xs border ${
@@ -405,9 +492,9 @@ export default function DashboardPage() {
           </button>
 
           <button
-            onClick={() => setSortMode('urgentes')}
+            onClick={() => setSortMode('prioridad')}
             className={`px-3 py-2 rounded-md text-xs border ${
-              sortMode === 'urgentes'
+              sortMode === 'prioridad'
                 ? 'bg-red-500 border-red-600 text-slate-950'
                 : 'bg-slate-900 border-slate-700 text-slate-300'
             }`}
@@ -436,11 +523,12 @@ export default function DashboardPage() {
       <section className="px-6 pb-20">
         <div className="border border-slate-800 rounded-lg overflow-hidden">
           {/* Cabecera tabla */}
-          <div className="bg-slate-900/80 px-4 py-3 grid grid-cols-7 text-xs text-slate-400 font-medium">
+          <div className="bg-slate-900/80 px-4 py-3 grid grid-cols-8 text-xs text-slate-400 font-medium">
             <div className="col-span-2">Expediente</div>
             <div>Estado</div>
             <div>Urgente</div>
             <div>Fecha límite</div>
+            <div>Prioridad</div>
             <div>Documentación</div>
             <div>Acciones</div>
           </div>
@@ -469,7 +557,9 @@ export default function DashboardPage() {
                   const now = new Date().getTime();
                   const limit = new Date(c.fecha_limite).getTime();
                   const diff = limit - now;
-                  const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+                  const days = Math.ceil(
+                    diff / (1000 * 60 * 60 * 24)
+                  );
 
                   if (days < 0) {
                     fechaTexto = `Vencido (${Math.abs(days)} días)`;
@@ -524,10 +614,25 @@ export default function DashboardPage() {
                     ? 'bg-emerald-600'
                     : 'bg-amber-400';
 
+                // Prioridad
+                const prioridad = calcularPrioridad(c);
+                let prioridadClasses =
+                  'border-slate-700 bg-slate-900 text-slate-300';
+                if (prioridad.nivel === 'critica') {
+                  prioridadClasses =
+                    'border-red-600 bg-red-900/60 text-red-200';
+                } else if (prioridad.nivel === 'alta') {
+                  prioridadClasses =
+                    'border-orange-500 bg-orange-900/50 text-orange-200';
+                } else if (prioridad.nivel === 'media') {
+                  prioridadClasses =
+                    'border-yellow-500 bg-yellow-900/40 text-yellow-200';
+                }
+
                 return (
                   <div
                     key={c.id}
-                    className="grid grid-cols-7 items-center px-4 py-4 hover:bg-slate-900/40 text-sm"
+                    className="grid grid-cols-8 items-center px-4 py-4 hover:bg-slate-900/40 text-sm"
                   >
                     {/* EXPEDIENTE */}
                     <div className="col-span-2">
@@ -571,6 +676,23 @@ export default function DashboardPage() {
                       </span>
                     </div>
 
+                    {/* PRIORIDAD */}
+                    <div>
+                      <div
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-xs ${prioridadClasses}`}
+                      >
+                        <span>{prioridad.label}</span>
+                        <span className="text-[10px] opacity-70">
+                          ({prioridad.score})
+                        </span>
+                        {c.prioridad_manual_alta && (
+                          <span className="text-[10px] opacity-80">
+                            · manual
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
                     {/* DOCUMENTACIÓN */}
                     <div className="flex flex-col gap-1">
                       <span className={`text-xs font-medium ${docsColor}`}>
@@ -612,6 +734,29 @@ export default function DashboardPage() {
                         className="text-red-400 hover:text-red-300 text-xs"
                       >
                         {c.urgente ? 'Quitar' : 'Urgente'}
+                      </button>
+
+                      {/* Prioridad manual alta ON/OFF */}
+                      <button
+                        onClick={async () => {
+                          const nuevo = !c.prioridad_manual_alta;
+                          await supabase
+                            .from('casos')
+                            .update({ prioridad_manual_alta: nuevo })
+                            .eq('id', c.id);
+
+                          const updated = casos.map((x) =>
+                            x.id === c.id
+                              ? { ...x, prioridad_manual_alta: nuevo }
+                              : x
+                          );
+                          setCasos(updated);
+                        }}
+                        className="text-orange-300 hover:text-orange-200 text-xs"
+                      >
+                        {c.prioridad_manual_alta
+                          ? 'Quitar prio'
+                          : 'Prio alta'}
                       </button>
                     </div>
                   </div>
