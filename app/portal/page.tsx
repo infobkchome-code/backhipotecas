@@ -15,7 +15,7 @@ type Caso = {
   urgente: boolean;
   fecha_limite: string | null;
   updated_at: string;
-  // 👇 NUEVO: datos de checklist
+  // 👇 datos de checklist
   docs_total?: number;
   docs_completados?: number;
 };
@@ -31,6 +31,8 @@ const ESTADOS = [
   { value: 'denegado', label: 'Denegado' },
 ];
 
+type SortMode = 'default' | 'docs' | 'urgentes';
+
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [casos, setCasos] = useState<Caso[]>([]);
@@ -42,7 +44,9 @@ export default function DashboardPage() {
   const [filterUrgente, setFilterUrgente] = useState<boolean | null>(null);
   const [filterVencido, setFilterVencido] = useState<boolean | null>(null);
   const [filterDocsPendientes, setFilterDocsPendientes] =
-    useState<boolean>(false); // 👈 NUEVO
+    useState<boolean>(false);
+
+  const [sortMode, setSortMode] = useState<SortMode>('default');
 
   // -----------------------------
   // Cargar expedientes + checklist
@@ -96,11 +100,8 @@ export default function DashboardPage() {
         if (docsError) {
           console.error('Error cargando checklist global:', docsError);
         } else if (docsRows) {
-          // Agrupar por caso
-          const stats: Record<
-            string,
-            { total: number; completados: number }
-          > = {};
+          const stats: Record<string, { total: number; completados: number }> =
+            {};
 
           (docsRows as { caso_id: string; completado: boolean }[]).forEach(
             (row) => {
@@ -134,7 +135,7 @@ export default function DashboardPage() {
   }, []);
 
   // -----------------------------
-  // Aplicar buscador + filtros
+  // Aplicar buscador + filtros + orden
   // -----------------------------
   useEffect(() => {
     let results = [...casos];
@@ -166,7 +167,7 @@ export default function DashboardPage() {
       });
     }
 
-    // 👇 NUEVO: filtro “docs pendientes”
+    // Filtro “docs pendientes”
     if (filterDocsPendientes) {
       results = results.filter((c) => {
         const total = c.docs_total ?? 0;
@@ -175,8 +176,48 @@ export default function DashboardPage() {
       });
     }
 
+    // Orden
+    results.sort((a, b) => {
+      if (sortMode === 'docs') {
+        const ta = a.docs_total ?? 0;
+        const ca = a.docs_completados ?? 0;
+        const tb = b.docs_total ?? 0;
+        const cb = b.docs_completados ?? 0;
+        const pa = ta > 0 ? ca / ta : 0;
+        const pb = tb > 0 ? cb / tb : 0;
+        // Menos documentación primero
+        if (pa !== pb) return pa - pb;
+        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      }
+
+      if (sortMode === 'urgentes') {
+        // Urgentes primero, luego por fecha límite más próxima
+        const ua = a.urgente ? 1 : 0;
+        const ub = b.urgente ? 1 : 0;
+        if (ua !== ub) return ub - ua;
+
+        const la = a.fecha_limite ? new Date(a.fecha_limite).getTime() : Infinity;
+        const lb = b.fecha_limite ? new Date(b.fecha_limite).getTime() : Infinity;
+
+        if (la !== lb) return la - lb;
+
+        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      }
+
+      // default: últimos actualizados primero
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+
     setFiltered(results);
-  }, [search, filterEstado, filterUrgente, filterVencido, filterDocsPendientes, casos]);
+  }, [
+    search,
+    filterEstado,
+    filterUrgente,
+    filterVencido,
+    filterDocsPendientes,
+    sortMode,
+    casos,
+  ]);
 
   // Contadores
   const countByEstado = (estado: string) =>
@@ -257,7 +298,7 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        {/* 👇 NUEVO: Docs pendientes */}
+        {/* Docs pendientes */}
         <div className="rounded-lg bg-amber-950/40 border border-amber-700 p-3 text-center">
           <p className="text-xs text-amber-300">Docs pendientes</p>
           <p className="text-lg font-semibold text-amber-300">
@@ -279,7 +320,7 @@ export default function DashboardPage() {
           />
         </div>
 
-        {/* Filtros */}
+        {/* Filtros + orden */}
         <div className="flex flex-wrap items-center gap-2">
           {/* Filtro por estado */}
           <select
@@ -325,7 +366,7 @@ export default function DashboardPage() {
             Vencidos
           </button>
 
-          {/* 👇 NUEVO: filtro docs pendientes */}
+          {/* Filtro docs pendientes */}
           <button
             onClick={() => setFilterDocsPendientes(!filterDocsPendientes)}
             className={`px-3 py-2 rounded-md text-xs border ${
@@ -337,6 +378,43 @@ export default function DashboardPage() {
             Docs pendientes
           </button>
 
+          {/* Separador visual */}
+          <span className="mx-2 h-6 w-px bg-slate-700 hidden md:inline-block" />
+
+          {/* Orden: por defecto / docs / urgentes */}
+          <button
+            onClick={() => setSortMode('default')}
+            className={`px-3 py-2 rounded-md text-xs border ${
+              sortMode === 'default'
+                ? 'bg-slate-100 border-slate-300 text-slate-900'
+                : 'bg-slate-900 border-slate-700 text-slate-300'
+            }`}
+          >
+            Últimos mov.
+          </button>
+
+          <button
+            onClick={() => setSortMode('docs')}
+            className={`px-3 py-2 rounded-md text-xs border ${
+              sortMode === 'docs'
+                ? 'bg-emerald-500 border-emerald-600 text-slate-950'
+                : 'bg-slate-900 border-slate-700 text-slate-300'
+            }`}
+          >
+            Menos docs
+          </button>
+
+          <button
+            onClick={() => setSortMode('urgentes')}
+            className={`px-3 py-2 rounded-md text-xs border ${
+              sortMode === 'urgentes'
+                ? 'bg-red-500 border-red-600 text-slate-950'
+                : 'bg-slate-900 border-slate-700 text-slate-300'
+            }`}
+          >
+            Prioridad
+          </button>
+
           {/* Reset filtros */}
           <button
             onClick={() => {
@@ -345,6 +423,7 @@ export default function DashboardPage() {
               setFilterVencido(null);
               setFilterDocsPendientes(false);
               setSearch('');
+              setSortMode('default');
             }}
             className="px-3 py-2 rounded-md border border-slate-700 text-xs text-slate-300 bg-slate-900 hover:bg-slate-800"
           >
@@ -368,158 +447,176 @@ export default function DashboardPage() {
 
           {/* Cuerpo */}
           <div className="divide-y divide-slate-800">
-            {filtered.length === 0 && (
+            {loading && (
+              <div className="px-4 py-6 text-center text-slate-500 text-sm">
+                Cargando expedientes…
+              </div>
+            )}
+
+            {!loading && filtered.length === 0 && (
               <div className="px-4 py-6 text-center text-slate-500 text-sm">
                 No hay expedientes que coincidan con los filtros.
               </div>
             )}
 
-            {filtered.map((c) => {
-              // Fecha límite → countdown
-              let fechaTexto = '-';
-              let fechaColor = 'text-slate-300';
+            {!loading &&
+              filtered.map((c) => {
+                // Fecha límite → countdown
+                let fechaTexto = '-';
+                let fechaColor = 'text-slate-300';
 
-              if (c.fecha_limite) {
-                const now = new Date().getTime();
-                const limit = new Date(c.fecha_limite).getTime();
-                const diff = limit - now;
-                const days = Math.ceil(
-                  diff / (1000 * 60 * 60 * 24)
-                );
+                if (c.fecha_limite) {
+                  const now = new Date().getTime();
+                  const limit = new Date(c.fecha_limite).getTime();
+                  const diff = limit - now;
+                  const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
 
-                if (days < 0) {
-                  fechaTexto = `Vencido (${Math.abs(days)} días)`;
-                  fechaColor = 'text-red-400';
-                } else if (days === 0) {
-                  fechaTexto = 'Hoy';
-                  fechaColor = 'text-orange-400';
-                } else if (days === 1) {
-                  fechaTexto = 'Mañana';
-                  fechaColor = 'text-yellow-400';
-                } else {
-                  fechaTexto = `En ${days} días`;
-                  fechaColor = 'text-slate-300';
+                  if (days < 0) {
+                    fechaTexto = `Vencido (${Math.abs(days)} días)`;
+                    fechaColor = 'text-red-400';
+                  } else if (days === 0) {
+                    fechaTexto = 'Hoy';
+                    fechaColor = 'text-orange-400';
+                  } else if (days === 1) {
+                    fechaTexto = 'Mañana';
+                    fechaColor = 'text-yellow-400';
+                  } else {
+                    fechaTexto = `En ${days} días`;
+                    fechaColor = 'text-slate-300';
+                  }
                 }
-              }
 
-              // Estado → badge
-              const estadoBadge = {
-                en_estudio:
-                  'bg-blue-900 text-blue-300 border-blue-700',
-                tasacion:
-                  'bg-purple-900 text-purple-300 border-purple-700',
-                fein: 'bg-indigo-900 text-indigo-300 border-indigo-700',
-                notaria:
-                  'bg-yellow-900 text-yellow-300 border-yellow-700',
-                compraventa:
-                  'bg-green-900 text-green-300 border-green-700',
-                fin: 'bg-slate-700 text-slate-300 border-slate-600',
-                denegado:
-                  'bg-red-900 text-red-300 border-red-700',
-              }[c.estado];
+                // Estado → badge
+                const estadoBadge = {
+                  en_estudio: 'bg-blue-900 text-blue-300 border-blue-700',
+                  tasacion: 'bg-purple-900 text-purple-300 border-purple-700',
+                  fein: 'bg-indigo-900 text-indigo-300 border-indigo-700',
+                  notaria: 'bg-yellow-900 text-yellow-300 border-yellow-700',
+                  compraventa:
+                    'bg-green-900 text-green-300 border-green-700',
+                  fin: 'bg-slate-700 text-slate-300 border-slate-600',
+                  denegado: 'bg-red-900 text-red-300 border-red-700',
+                }[c.estado];
 
-              // Docs resumen
-              const totalDocs = c.docs_total ?? 0;
-              const doneDocs = c.docs_completados ?? 0;
-              const docsTexto =
-                totalDocs > 0 ? `${doneDocs}/${totalDocs}` : '-';
-              const docsColor =
-                totalDocs > 0
-                  ? doneDocs === totalDocs
-                    ? 'text-emerald-400'
-                    : 'text-amber-300'
-                  : 'text-slate-400';
+                // Docs resumen + barra
+                const totalDocs = c.docs_total ?? 0;
+                const doneDocs = c.docs_completados ?? 0;
+                const docsTexto =
+                  totalDocs > 0 ? `${doneDocs}/${totalDocs}` : '-';
+                const ratio =
+                  totalDocs > 0 ? Math.min(1, doneDocs / totalDocs) : 0;
 
-              return (
-                <div
-                  key={c.id}
-                  className="grid grid-cols-7 items-center px-4 py-4 hover:bg-slate-900/40 text-sm"
-                >
-                  {/* EXPEDIENTE */}
-                  <div className="col-span-2">
-                    <p className="text-slate-100 font-medium">
-                      {c.titulo}
-                    </p>
-                    <p className="text-xs text-slate-500">
-                      Último movimiento:{' '}
-                      {new Date(
-                        c.updated_at
-                      ).toLocaleDateString('es-ES')}
-                    </p>
-                  </div>
+                let docsColor = 'text-slate-400';
+                if (totalDocs > 0) {
+                  if (doneDocs === totalDocs) {
+                    docsColor = 'text-emerald-400';
+                  } else if (doneDocs === 0) {
+                    docsColor = 'text-red-400';
+                  } else {
+                    docsColor = 'text-amber-300';
+                  }
+                }
 
-                  {/* ESTADO */}
-                  <div>
-                    <span
-                      className={`px-2 py-1 text-xs rounded-md border ${estadoBadge}`}
-                    >
-                      {ESTADOS.find(
-                        (e) => e.value === c.estado
-                      )?.label || c.estado}
-                    </span>
-                  </div>
+                const barBg =
+                  totalDocs === 0
+                    ? 'bg-slate-800'
+                    : doneDocs === totalDocs
+                    ? 'bg-emerald-600'
+                    : 'bg-amber-400';
 
-                  {/* URGENTE */}
-                  <div>
-                    {c.urgente ? (
-                      <span className="px-2 py-1 text-xs rounded-md bg-red-700 text-white border border-red-800 animate-pulse">
-                        ¡Urgente!
+                return (
+                  <div
+                    key={c.id}
+                    className="grid grid-cols-7 items-center px-4 py-4 hover:bg-slate-900/40 text-sm"
+                  >
+                    {/* EXPEDIENTE */}
+                    <div className="col-span-2">
+                      <p className="text-slate-100 font-medium">
+                        {c.titulo}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Último movimiento:{' '}
+                        {new Date(
+                          c.updated_at
+                        ).toLocaleDateString('es-ES')}
+                      </p>
+                    </div>
+
+                    {/* ESTADO */}
+                    <div>
+                      <span
+                        className={`px-2 py-1 text-xs rounded-md border ${estadoBadge}`}
+                      >
+                        {ESTADOS.find(
+                          (e) => e.value === c.estado
+                        )?.label || c.estado}
                       </span>
-                    ) : (
-                      <span className="text-slate-500 text-xs">
-                        -
+                    </div>
+
+                    {/* URGENTE */}
+                    <div>
+                      {c.urgente ? (
+                        <span className="px-2 py-1 text-xs rounded-md bg-red-700 text-white border border-red-800 animate-pulse">
+                          ¡Urgente!
+                        </span>
+                      ) : (
+                        <span className="text-slate-500 text-xs">-</span>
+                      )}
+                    </div>
+
+                    {/* FECHA LÍMITE */}
+                    <div>
+                      <span className={`text-xs ${fechaColor}`}>
+                        {fechaTexto}
                       </span>
-                    )}
+                    </div>
+
+                    {/* DOCUMENTACIÓN */}
+                    <div className="flex flex-col gap-1">
+                      <span className={`text-xs font-medium ${docsColor}`}>
+                        {docsTexto}
+                      </span>
+                      <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                        <div
+                          className={`h-1.5 ${barBg}`}
+                          style={{ width: `${ratio * 100}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    {/* ACCIONES */}
+                    <div className="flex gap-2 justify-end">
+                      {/* Abrir expediente */}
+                      <Link
+                        href={`/portal/case/${c.id}`}
+                        className="text-emerald-400 hover:text-emerald-300 text-xs"
+                      >
+                        Abrir
+                      </Link>
+
+                      {/* Marcar urgente / no urgente */}
+                      <button
+                        onClick={async () => {
+                          await supabase
+                            .from('casos')
+                            .update({ urgente: !c.urgente })
+                            .eq('id', c.id);
+
+                          const updated = casos.map((x) =>
+                            x.id === c.id
+                              ? { ...x, urgente: !c.urgente }
+                              : x
+                          );
+                          setCasos(updated);
+                        }}
+                        className="text-red-400 hover:text-red-300 text-xs"
+                      >
+                        {c.urgente ? 'Quitar' : 'Urgente'}
+                      </button>
+                    </div>
                   </div>
-
-                  {/* FECHA LÍMITE */}
-                  <div>
-                    <span className={`text-xs ${fechaColor}`}>
-                      {fechaTexto}
-                    </span>
-                  </div>
-
-                  {/* DOCUMENTACIÓN */}
-                  <div>
-                    <span className={`text-xs font-medium ${docsColor}`}>
-                      {docsTexto}
-                    </span>
-                  </div>
-
-                  {/* ACCIONES */}
-                  <div className="flex gap-2 justify-end">
-                    {/* Abrir expediente */}
-                    <Link
-                      href={`/portal/case/${c.id}`}
-                      className="text-emerald-400 hover:text-emerald-300 text-xs"
-                    >
-                      Abrir
-                    </Link>
-
-                    {/* Marcar urgente / no urgente */}
-                    <button
-                      onClick={async () => {
-                        await supabase
-                          .from('casos')
-                          .update({ urgente: !c.urgente })
-                          .eq('id', c.id);
-
-                        // refrescar la lista en memoria
-                        const updated = casos.map((x) =>
-                          x.id === c.id
-                            ? { ...x, urgente: !c.urgente }
-                            : x
-                        );
-                        setCasos(updated);
-                      }}
-                      className="text-red-400 hover:text-red-300 text-xs"
-                    >
-                      {c.urgente ? 'Quitar' : 'Urgente'}
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         </div>
       </section>
