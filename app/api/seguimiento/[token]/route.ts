@@ -13,7 +13,8 @@ export async function GET(
   const token = context.params.token;
 
   try {
-    const { data, error } = await supabase
+    // 1) Buscar el expediente por token
+    const { data: caso, error } = await supabase
       .from('casos')
       .select(
         'id, titulo, estado, progreso, notas, created_at, updated_at, seguimiento_token'
@@ -24,19 +25,37 @@ export async function GET(
     if (error) {
       console.error('Error Supabase seguimiento:', error);
       return NextResponse.json(
-        { error: 'Error al buscar el expediente' },
+        { error: 'db_error' },
         { status: 500 }
       );
     }
 
-    if (!data) {
+    if (!caso) {
       return NextResponse.json(
         { error: 'not_found' },
         { status: 404 }
       );
     }
 
-    return NextResponse.json({ data }, { status: 200 });
+    // 2) Logs visibles para cliente
+    const { data: logs, error: logsError } = await supabase
+      .from('expediente_logs')
+      .select('id, created_at, tipo, descripcion')
+      .eq('caso_id', (caso as any).id)
+      .eq('visible_cliente', true)
+      .order('created_at', { ascending: true });
+
+    if (logsError) {
+      console.error('Error cargando logs seguimiento:', logsError);
+    }
+
+    return NextResponse.json(
+      {
+        data: caso,
+        logs: logs ?? [],
+      },
+      { status: 200 }
+    );
   } catch (err) {
     console.error('Error inesperado en /api/seguimiento/[token]:', err);
     return NextResponse.json(
