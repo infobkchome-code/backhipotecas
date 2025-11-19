@@ -15,6 +15,9 @@ type Caso = {
   urgente: boolean;
   fecha_limite: string | null;
   updated_at: string;
+  // 👇 NUEVO: datos de checklist
+  docs_total?: number;
+  docs_completados?: number;
 };
 
 // Estados para contadores
@@ -38,9 +41,11 @@ export default function DashboardPage() {
   const [filterEstado, setFilterEstado] = useState<string | null>(null);
   const [filterUrgente, setFilterUrgente] = useState<boolean | null>(null);
   const [filterVencido, setFilterVencido] = useState<boolean | null>(null);
+  const [filterDocsPendientes, setFilterDocsPendientes] =
+    useState<boolean>(false); // 👈 NUEVO
 
   // -----------------------------
-  // Cargar expedientes
+  // Cargar expedientes + checklist
   // -----------------------------
   useEffect(() => {
     const load = async () => {
@@ -48,8 +53,12 @@ export default function DashboardPage() {
         data: { user },
       } = await supabase.auth.getUser();
 
-      if (!user) return;
+      if (!user) {
+        setLoading(false);
+        return;
+      }
 
+      // 1) Cargar casos
       const { data, error } = await supabase
         .from('casos')
         .select(
@@ -66,11 +75,58 @@ export default function DashboardPage() {
         .eq('user_id', user.id)
         .order('updated_at', { ascending: false });
 
-      if (!error && data) {
-        setCasos(data as Caso[]);
-        setFiltered(data as Caso[]);
+      if (error || !data) {
+        console.error('Error cargando casos:', error);
+        setLoading(false);
+        return;
       }
 
+      const casosBase = data as Caso[];
+
+      // 2) Cargar checklist de todos los casos (en bloque)
+      const caseIds = casosBase.map((c) => c.id);
+      let casosConDocs: Caso[] = casosBase;
+
+      if (caseIds.length > 0) {
+        const { data: docsRows, error: docsError } = await supabase
+          .from('casos_documentos_requeridos')
+          .select('caso_id, completado')
+          .in('caso_id', caseIds);
+
+        if (docsError) {
+          console.error('Error cargando checklist global:', docsError);
+        } else if (docsRows) {
+          // Agrupar por caso
+          const stats: Record<
+            string,
+            { total: number; completados: number }
+          > = {};
+
+          (docsRows as { caso_id: string; completado: boolean }[]).forEach(
+            (row) => {
+              if (!stats[row.caso_id]) {
+                stats[row.caso_id] = { total: 0, completados: 0 };
+              }
+              stats[row.caso_id].total += 1;
+              if (row.completado) {
+                stats[row.caso_id].completados += 1;
+              }
+            }
+          );
+
+          casosConDocs = casosBase.map((c) => {
+            const info = stats[c.id];
+            return {
+              ...c,
+              docs_total: info?.total ?? 0,
+              docs_completados: info?.completados ?? 0,
+            };
+          });
+        }
+      }
+
+      setCasos(casosConDocs);
+      setFiltered(casosConDocs);
       setLoading(false);
     };
 
@@ -87,7 +143,7 @@ export default function DashboardPage() {
     if (search.trim() !== '') {
       const term = search.toLowerCase();
       results = results.filter((c) =>
-        c.titulo.toLowerCase().includes(term)
+        (c.titulo || '').toLowerCase().includes(term)
       );
     }
 
@@ -110,8 +166,17 @@ export default function DashboardPage() {
       });
     }
 
+    // 👇 NUEVO: filtro “docs pendientes”
+    if (filterDocsPendientes) {
+      results = results.filter((c) => {
+        const total = c.docs_total ?? 0;
+        const comp = c.docs_completados ?? 0;
+        return total > 0 && comp < total;
+      });
+    }
+
     setFiltered(results);
-  }, [search, filterEstado, filterUrgente, filterVencido, casos]);
+  }, [search, filterEstado, filterUrgente, filterVencido, filterDocsPendientes, casos]);
 
   // Contadores
   const countByEstado = (estado: string) =>
@@ -125,12 +190,16 @@ export default function DashboardPage() {
       new Date(c.fecha_limite).getTime() < new Date().getTime()
   ).length;
 
+  const docsPendientesCount = casos.filter((c) => {
+    const total = c.docs_total ?? 0;
+    const comp = c.docs_completados ?? 0;
+    return total > 0 && comp < total;
+  }).length;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
-
       {/* -------------------------------- HEADER -------------------------------- */}
       <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
-
         {/* Logo + título */}
         <div className="flex items-center gap-3">
           <div className="bg-slate-700 text-white font-bold px-3 py-1.5 rounded-md text-lg tracking-wide">
@@ -161,8 +230,7 @@ export default function DashboardPage() {
       </header>
 
       {/* -------------------------------- ESTADÍSTICAS -------------------------------- */}
-      <section className="px-6 py-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
-
+      <section className="px-6 py-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 gap-3">
         {ESTADOS.map((item) => (
           <div
             key={item.value}
@@ -189,13 +257,19 @@ export default function DashboardPage() {
           </p>
         </div>
 
+        {/* 👇 NUEVO: Docs pendientes */}
+        <div className="rounded-lg bg-amber-950/40 border border-amber-700 p-3 text-center">
+          <p className="text-xs text-amber-300">Docs pendientes</p>
+          <p className="text-lg font-semibold text-amber-300">
+            {docsPendientesCount}
+          </p>
+        </div>
       </section>
+
       {/* -------------------------------- BUSCADOR + FILTROS -------------------------------- */}
       <section className="px-6 pb-6">
-
         {/* Buscador */}
         <div className="flex flex-col md:flex-row md:items-center gap-3 mb-3">
-
           <input
             type="text"
             value={search}
@@ -203,12 +277,10 @@ export default function DashboardPage() {
             placeholder="Buscar por título, cliente, dirección…"
             className="flex-1 rounded-md bg-slate-900 border border-slate-700 px-4 py-2 text-sm text-slate-50 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
           />
-
         </div>
 
         {/* Filtros */}
         <div className="flex flex-wrap items-center gap-2">
-
           {/* Filtro por estado */}
           <select
             value={filterEstado ?? ''}
@@ -253,12 +325,25 @@ export default function DashboardPage() {
             Vencidos
           </button>
 
+          {/* 👇 NUEVO: filtro docs pendientes */}
+          <button
+            onClick={() => setFilterDocsPendientes(!filterDocsPendientes)}
+            className={`px-3 py-2 rounded-md text-xs border ${
+              filterDocsPendientes
+                ? 'bg-amber-500 border-amber-600 text-slate-950'
+                : 'bg-slate-900 border-slate-700 text-slate-300'
+            }`}
+          >
+            Docs pendientes
+          </button>
+
           {/* Reset filtros */}
           <button
             onClick={() => {
               setFilterEstado(null);
               setFilterUrgente(null);
               setFilterVencido(null);
+              setFilterDocsPendientes(false);
               setSearch('');
             }}
             className="px-3 py-2 rounded-md border border-slate-700 text-xs text-slate-300 bg-slate-900 hover:bg-slate-800"
@@ -267,22 +352,22 @@ export default function DashboardPage() {
           </button>
         </div>
       </section>
+
       {/* -------------------------------- TABLA PRO -------------------------------- */}
       <section className="px-6 pb-20">
         <div className="border border-slate-800 rounded-lg overflow-hidden">
-
           {/* Cabecera tabla */}
-          <div className="bg-slate-900/80 px-4 py-3 grid grid-cols-6 text-xs text-slate-400 font-medium">
+          <div className="bg-slate-900/80 px-4 py-3 grid grid-cols-7 text-xs text-slate-400 font-medium">
             <div className="col-span-2">Expediente</div>
             <div>Estado</div>
             <div>Urgente</div>
             <div>Fecha límite</div>
+            <div>Documentación</div>
             <div>Acciones</div>
           </div>
 
           {/* Cuerpo */}
           <div className="divide-y divide-slate-800">
-
             {filtered.length === 0 && (
               <div className="px-4 py-6 text-center text-slate-500 text-sm">
                 No hay expedientes que coincidan con los filtros.
@@ -298,8 +383,9 @@ export default function DashboardPage() {
                 const now = new Date().getTime();
                 const limit = new Date(c.fecha_limite).getTime();
                 const diff = limit - now;
-
-                const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+                const days = Math.ceil(
+                  diff / (1000 * 60 * 60 * 24)
+                );
 
                 if (days < 0) {
                   fechaTexto = `Vencido (${Math.abs(days)} días)`;
@@ -318,26 +404,47 @@ export default function DashboardPage() {
 
               // Estado → badge
               const estadoBadge = {
-                en_estudio: 'bg-blue-900 text-blue-300 border-blue-700',
-                tasacion: 'bg-purple-900 text-purple-300 border-purple-700',
+                en_estudio:
+                  'bg-blue-900 text-blue-300 border-blue-700',
+                tasacion:
+                  'bg-purple-900 text-purple-300 border-purple-700',
                 fein: 'bg-indigo-900 text-indigo-300 border-indigo-700',
-                notaria: 'bg-yellow-900 text-yellow-300 border-yellow-700',
-                compraventa: 'bg-green-900 text-green-300 border-green-700',
+                notaria:
+                  'bg-yellow-900 text-yellow-300 border-yellow-700',
+                compraventa:
+                  'bg-green-900 text-green-300 border-green-700',
                 fin: 'bg-slate-700 text-slate-300 border-slate-600',
-                denegado: 'bg-red-900 text-red-300 border-red-700',
+                denegado:
+                  'bg-red-900 text-red-300 border-red-700',
               }[c.estado];
+
+              // Docs resumen
+              const totalDocs = c.docs_total ?? 0;
+              const doneDocs = c.docs_completados ?? 0;
+              const docsTexto =
+                totalDocs > 0 ? `${doneDocs}/${totalDocs}` : '-';
+              const docsColor =
+                totalDocs > 0
+                  ? doneDocs === totalDocs
+                    ? 'text-emerald-400'
+                    : 'text-amber-300'
+                  : 'text-slate-400';
 
               return (
                 <div
                   key={c.id}
-                  className="grid grid-cols-6 items-center px-4 py-4 hover:bg-slate-900/40 text-sm"
+                  className="grid grid-cols-7 items-center px-4 py-4 hover:bg-slate-900/40 text-sm"
                 >
                   {/* EXPEDIENTE */}
                   <div className="col-span-2">
-                    <p className="text-slate-100 font-medium">{c.titulo}</p>
+                    <p className="text-slate-100 font-medium">
+                      {c.titulo}
+                    </p>
                     <p className="text-xs text-slate-500">
                       Último movimiento:{' '}
-                      {new Date(c.updated_at).toLocaleDateString('es-ES')}
+                      {new Date(
+                        c.updated_at
+                      ).toLocaleDateString('es-ES')}
                     </p>
                   </div>
 
@@ -346,7 +453,9 @@ export default function DashboardPage() {
                     <span
                       className={`px-2 py-1 text-xs rounded-md border ${estadoBadge}`}
                     >
-                      {ESTADOS.find((e) => e.value === c.estado)?.label}
+                      {ESTADOS.find(
+                        (e) => e.value === c.estado
+                      )?.label || c.estado}
                     </span>
                   </div>
 
@@ -357,18 +466,28 @@ export default function DashboardPage() {
                         ¡Urgente!
                       </span>
                     ) : (
-                      <span className="text-slate-500 text-xs">-</span>
+                      <span className="text-slate-500 text-xs">
+                        -
+                      </span>
                     )}
                   </div>
 
                   {/* FECHA LÍMITE */}
                   <div>
-                    <span className={`text-xs ${fechaColor}`}>{fechaTexto}</span>
+                    <span className={`text-xs ${fechaColor}`}>
+                      {fechaTexto}
+                    </span>
+                  </div>
+
+                  {/* DOCUMENTACIÓN */}
+                  <div>
+                    <span className={`text-xs font-medium ${docsColor}`}>
+                      {docsTexto}
+                    </span>
                   </div>
 
                   {/* ACCIONES */}
                   <div className="flex gap-2 justify-end">
-
                     {/* Abrir expediente */}
                     <Link
                       href={`/portal/case/${c.id}`}
@@ -385,9 +504,11 @@ export default function DashboardPage() {
                           .update({ urgente: !c.urgente })
                           .eq('id', c.id);
 
-                        // refrescar la lista
+                        // refrescar la lista en memoria
                         const updated = casos.map((x) =>
-                          x.id === c.id ? { ...x, urgente: !c.urgente } : x
+                          x.id === c.id
+                            ? { ...x, urgente: !c.urgente }
+                            : x
                         );
                         setCasos(updated);
                       }}
