@@ -11,53 +11,34 @@ if (!supabaseUrl || !supabaseServiceKey) {
 
 const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceKey!);
 
-/**
- * Helper: enviar email al cliente cuando responde el gestor
- * (lo dejamos preparado, pero ahora mismo solo hace console.log)
- */
-async function sendEmailToClient(casoId: string, mensaje: string) {
-  // 1) Buscar email y título del caso
-  const { data: caso, error: casoError } = await supabaseAdmin
-    .from('casos')
-    .select('email_cliente, titulo')
-    .eq('id', casoId)
-    .single();
+type Remitente = 'cliente' | 'gestor';
 
-  if (casoError || !caso?.email_cliente) {
-    console.warn(
-      'No se pudo obtener email_cliente para enviar notificación:',
-      casoError
-    );
-    return;
-  }
+type ChatMessage = {
+  id: string;
+  caso_id: string;
+  remitente: Remitente;
+  mensaje: string | null;
+  attachment_name: string | null;
+  attachment_path?: string | null;
+  storage_path?: string | null;
+  created_at: string;
+};
 
-  const to = caso.email_cliente as string;
-  const subject = `Tienes un nuevo mensaje de tu gestor - BKC Hipotecas`;
-  const body = `Hola,
+type ApiListResponse = {
+  ok: boolean;
+  messages?: ChatMessage[];
+  error?: string;
+};
 
-Tienes un nuevo mensaje de tu gestor en relación a tu expediente "${
-    caso.titulo ?? ''
-  }":
-
-"${mensaje}"
-
-Puedes entrar en tu portal de seguimiento para ver toda la conversación y responder.
-
-Un saludo,
-BKC Hipotecas
-`;
-
-  // 2) Integración real la hacemos más adelante
-  try {
-    console.log('Simulando envío de email a cliente:', to, subject);
-    // Aquí luego meteremos la llamada a Mailgun/Mailersend/etc.
-  } catch (e) {
-    console.error('Error enviando email al cliente:', e);
-  }
-}
+type ApiPostResponse = {
+  ok: boolean;
+  message?: ChatMessage;
+  error?: string;
+};
 
 /**
  * GET → obtener todos los mensajes del chat de un caso
+ * Además, marca cliente_tiene_mensajes_nuevos = FALSE en la tabla casos
  */
 export async function GET(
   _req: Request,
@@ -111,45 +92,68 @@ export async function GET(
     );
   }
 
-  return NextResponse.json({ ok: true, messages: data ?? [] });
+  return NextResponse.json({ ok: true, messages: data ?? [] } as ApiListResponse);
 }
 
 /**
  * POST → enviar mensaje al chat
+ * También pone cliente_tiene_mensajes_nuevos = TRUE si escribe el cliente
  */
 export async function POST(
   req: Request,
   { params }: { params: { id: string } }
 ) {
   const casoId = params.id;
-  const body = await req.json();
+  let body: any;
 
-  const { remitente, mensaje } = body as {
-    remitente?: 'cliente' | 'gestor';
+  try {
+    body = await req.json();
+  } catch (e) {
+    console.error('Error parseando JSON en POST /chat:', e);
+    return NextResponse.json(
+      { ok: false, error: 'Cuerpo de la petición inválido' } as ApiPostResponse,
+      { status: 400 }
+    );
+  }
+
+  const {
+    remitente,
+    mensaje,
+    attachment_name,
+    attachment_path,
+    storage_path,
+  } = body as {
+    remitente?: Remitente;
     mensaje?: string;
+    attachment_name?: string | null;
+    attachment_path?: string | null;
+    storage_path?: string | null;
   };
 
   if (!remitente || !['cliente', 'gestor'].includes(remitente)) {
     return NextResponse.json(
-      { ok: false, error: 'Remitente no válido' },
+      { ok: false, error: 'Remitente no válido' } as ApiPostResponse,
       { status: 400 }
     );
   }
 
   if (!mensaje || mensaje.trim().length === 0) {
     return NextResponse.json(
-      { ok: false, error: 'El mensaje no puede estar vacío' },
+      { ok: false, error: 'El mensaje no puede estar vacío' } as ApiPostResponse,
       { status: 400 }
     );
   }
 
-  // 1) Insertar mensaje
+  // 1) Insertar mensaje (incluyendo posibles adjuntos)
   const { data, error } = await supabaseAdmin
     .from('expediente_mensajes')
     .insert({
       caso_id: casoId,
       remitente,
       mensaje: mensaje.trim(),
+      attachment_name: attachment_name ?? null,
+      attachment_path: attachment_path ?? null,
+      storage_path: storage_path ?? null,
     })
     .select(
       `
@@ -168,17 +172,28 @@ export async function POST(
   if (error) {
     console.error('Error POST chat:', error);
     return NextResponse.json(
-      { ok: false, error: 'No se pudo guardar el mensaje' },
+      { ok: false, error: 'No se pudo guardar el mensaje' } as ApiPostResponse,
       { status: 500 }
     );
   }
 
-  // 2) Si el que escribe es el gestor → avisar al cliente por email (simulado)
-  if (remitente === 'gestor') {
-    sendEmailToClient(casoId, mensaje.trim()).catch((e) =>
-      console.error('Error en sendEmailToClient:', e)
-    );
+  // 2) Si el remitente es el cliente, marcar que hay mensajes nuevos
+  if (remitente === 'cliente') {
+    const { error: updError } = await supabaseAdmin
+      .from('casos')
+      .update({ cliente_tiene_mensajes_nuevos: true })
+      .eq('id', casoId);
+
+    if (updError) {
+      console.error(
+        'No se pudo marcar cliente_tiene_mensajes_nuevos = true:',
+        updError
+      );
+    }
   }
 
-  return NextResponse.json({ ok: true, message: data });
+  // 3) Si el remitente es el gestor, más adelante aquí haremos el envío de email al cliente
+  // (por ahora, lo dejamos pendiente como acordamos)
+
+  return NextResponse.json({ ok: true, message: data } as ApiPostResponse);
 }
