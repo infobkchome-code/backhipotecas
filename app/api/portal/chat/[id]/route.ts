@@ -1,9 +1,19 @@
 // app/api/portal/chat/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+import { createClient } from '@supabase/supabase-js';
 
-// Desactivamos caché en este endpoint
+export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// ⚠️ Usa SIEMPRE variables de entorno
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('❌ Faltan variables de entorno de Supabase');
+}
+
+const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
 
 type Remitente = 'gestor' | 'cliente';
 
@@ -11,8 +21,8 @@ interface NewMessagePayload {
   remitente: Remitente;
   mensaje?: string | null;
   attachment_name?: string | null;
-  attachment_path?: string | null; // por si lo usas así
-  storage_path?: string | null;    // o así
+  attachment_path?: string | null;
+  storage_path?: string | null;
 }
 
 // GET /api/portal/chat/[id]
@@ -30,35 +40,46 @@ export async function GET(
     );
   }
 
-  const { data, error } = await supabase
-    .from('caso_mensajes') // 👈 CAMBIA ESTE NOMBRE SI TU TABLA ES OTRA
-    .select(
+  try {
+    const { data, error } = await supabase
+      .from('caso_mensajes') // 👈 CAMBIA AQUÍ SI TU TABLA SE LLAMA DISTINTO
+      .select(
+        `
+        id,
+        caso_id,
+        remitente,
+        mensaje,
+        attachment_name,
+        attachment_path,
+        storage_path,
+        created_at
       `
-      id,
-      caso_id,
-      remitente,
-      mensaje,
-      attachment_name,
-      attachment_path,
-      storage_path,
-      created_at
-    `
-    )
-    .eq('caso_id', casoId)
-    .order('created_at', { ascending: true });
+      )
+      .eq('caso_id', casoId)
+      .order('created_at', { ascending: true });
 
-  if (error) {
-    console.error('Error al obtener mensajes:', error);
+    if (error) {
+      console.error('❌ Error Supabase GET /chat:', error);
+      return NextResponse.json(
+        { ok: false, error: 'No se pudieron obtener los mensajes.' },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
-      { ok: false, error: 'No se pudieron obtener los mensajes del expediente.' },
+      {
+        ok: true,
+        messages: data ?? [],
+      },
+      { status: 200 }
+    );
+  } catch (e) {
+    console.error('❌ Excepción GET /chat:', e);
+    return NextResponse.json(
+      { ok: false, error: 'Error inesperado al obtener los mensajes.' },
       { status: 500 }
     );
   }
-
-  return NextResponse.json({
-    ok: true,
-    messages: data ?? [],
-  });
 }
 
 // POST /api/portal/chat/[id]
@@ -80,9 +101,9 @@ export async function POST(
   try {
     body = (await req.json()) as NewMessagePayload;
   } catch (e) {
-    console.error('Error parseando el JSON del cuerpo:', e);
+    console.error('❌ Error parseando JSON en POST /chat:', e);
     return NextResponse.json(
-      { ok: false, error: 'Formato de cuerpo inválido. Debe ser JSON.' },
+      { ok: false, error: 'Cuerpo de la petición inválido. Debe ser JSON.' },
       { status: 400 }
     );
   }
@@ -109,49 +130,57 @@ export async function POST(
     return NextResponse.json(
       {
         ok: false,
-        error: 'Debe enviarse al menos un mensaje de texto o un adjunto.',
+        error: 'Debes enviar al menos un mensaje de texto o un adjunto.',
       },
       { status: 400 }
     );
   }
 
-  const { data, error } = await supabase
-    .from('caso_mensajes') // 👈 CAMBIA ESTE NOMBRE SI TU TABLA ES OTRA
-    .insert({
-      caso_id: casoId,
-      remitente,
-      mensaje,
-      attachment_name,
-      attachment_path,
-      storage_path,
-    })
-    .select(
+  try {
+    const { data, error } = await supabase
+      .from('caso_mensajes') // 👈 CAMBIA AQUÍ SI TU TABLA SE LLAMA DISTINTO
+      .insert({
+        caso_id: casoId,
+        remitente,
+        mensaje,
+        attachment_name,
+        attachment_path,
+        storage_path,
+      })
+      .select(
+        `
+        id,
+        caso_id,
+        remitente,
+        mensaje,
+        attachment_name,
+        attachment_path,
+        storage_path,
+        created_at
       `
-      id,
-      caso_id,
-      remitente,
-      mensaje,
-      attachment_name,
-      attachment_path,
-      storage_path,
-      created_at
-    `
-    )
-    .single();
+      )
+      .single();
 
-  if (error) {
-    console.error('Error al insertar mensaje:', error);
+    if (error) {
+      console.error('❌ Error Supabase POST /chat:', error);
+      return NextResponse.json(
+        { ok: false, error: 'No se pudo guardar el mensaje.' },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json(
-      { ok: false, error: 'No se pudo guardar el mensaje en la base de datos.' },
+      {
+        ok: true,
+        message: data,
+      },
+      { status: 201 }
+    );
+  } catch (e) {
+    console.error('❌ Excepción POST /chat:', e);
+    return NextResponse.json(
+      { ok: false, error: 'Error inesperado al guardar el mensaje.' },
       { status: 500 }
     );
   }
-
-  return NextResponse.json(
-    {
-      ok: true,
-      message: data,
-    },
-    { status: 201 }
-  );
 }
