@@ -1,12 +1,23 @@
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+import { createClient } from '@supabase/supabase-js';
+
+// ⚙️ Cliente Supabase con SERVICE ROLE (solo servidor)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('❌ Faltan variables de entorno de Supabase en la API de chat');
+}
+
+const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceKey!);
 
 /**
  * Helper: enviar email al cliente cuando responde el gestor
+ * (lo dejamos preparado, pero ahora mismo solo hace console.log)
  */
 async function sendEmailToClient(casoId: string, mensaje: string) {
   // 1) Buscar email y título del caso
-  const { data: caso, error: casoError } = await supabase
+  const { data: caso, error: casoError } = await supabaseAdmin
     .from('casos')
     .select('email_cliente, titulo')
     .eq('id', casoId)
@@ -36,25 +47,10 @@ Un saludo,
 BKC Hipotecas
 `;
 
-  // 2) Aquí integras tu proveedor de email real
-  //    Ejemplo con "fetch" a una API externa o Resend, etc.
+  // 2) Integración real la hacemos más adelante
   try {
-    // EJEMPLO (a adaptar a tu proveedor):
-    /*
-    await fetch('https://api.tu-proveedor-email.com/send', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${process.env.EMAIL_API_KEY}`,
-      },
-      body: JSON.stringify({
-        to,
-        subject,
-        text: body,
-      }),
-    });
-    */
     console.log('Simulando envío de email a cliente:', to, subject);
+    // Aquí luego meteremos la llamada a Mailgun/Mailersend/etc.
   } catch (e) {
     console.error('Error enviando email al cliente:', e);
   }
@@ -76,8 +72,9 @@ export async function GET(
     );
   }
 
-  const { data, error } = await supabase
-    .from('expediente_mensajes') // 👈 tu tabla real
+  // 1) Obtener mensajes
+  const { data, error } = await supabaseAdmin
+    .from('expediente_mensajes')
     .select(
       `
       id,
@@ -101,8 +98,8 @@ export async function GET(
     );
   }
 
-  // Marcar como leídos los mensajes del cliente para este caso
-  const { error: updError } = await supabase
+  // 2) Marcar como leídos los mensajes del cliente para este caso
+  const { error: updError } = await supabaseAdmin
     .from('casos')
     .update({ cliente_tiene_mensajes_nuevos: false })
     .eq('id', casoId);
@@ -146,8 +143,9 @@ export async function POST(
     );
   }
 
-  const { data, error } = await supabase
-    .from('expediente_mensajes') // 👈 misma tabla
+  // 1) Insertar mensaje
+  const { data, error } = await supabaseAdmin
+    .from('expediente_mensajes')
     .insert({
       caso_id: casoId,
       remitente,
@@ -175,9 +173,8 @@ export async function POST(
     );
   }
 
-  // 📨 Si el que escribe es el gestor → avisar al cliente por email
+  // 2) Si el que escribe es el gestor → avisar al cliente por email (simulado)
   if (remitente === 'gestor') {
-    // No bloqueamos la respuesta: lo lanzamos "en segundo plano"
     sendEmailToClient(casoId, mensaje.trim()).catch((e) =>
       console.error('Error en sendEmailToClient:', e)
     );
