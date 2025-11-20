@@ -37,6 +37,7 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
+  const [casoTitulo, setCasoTitulo] = useState<string>(''); // 👈 nombre/título del expediente
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = () => {
@@ -45,15 +46,27 @@ export default function ChatPage() {
     }
   };
 
-  // 1) Cargar mensajes iniciales
+  // 1) Cargar título del caso + mensajes iniciales
   useEffect(() => {
-    const fetchMessages = async () => {
+    const fetchAll = async () => {
       if (!casoId) return;
 
       setLoading(true);
       setError(null);
 
       try {
+        // 1.1 Cargar datos del expediente (para mostrar el título/nombre)
+        const { data: casoData, error: casoError } = await supabase
+          .from('casos')
+          .select('id, titulo')
+          .eq('id', casoId)
+          .single();
+
+        if (!casoError && casoData) {
+          setCasoTitulo(casoData.titulo ?? '');
+        }
+
+        // 1.2 Cargar mensajes del chat
         const res = await fetch(`/api/portal/chat/${casoId}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
@@ -77,7 +90,7 @@ export default function ChatPage() {
       }
     };
 
-    fetchMessages();
+    fetchAll();
   }, [casoId]);
 
   // 2) Suscripción Realtime: escuchar mensajes nuevos de este expediente
@@ -138,8 +151,7 @@ export default function ChatPage() {
         return;
       }
 
-      // NO hace falta hacer push aquí, la suscripción Realtime también lo añadirá,
-      // pero lo dejamos para que se vea instantáneo incluso si Realtime tarda un pelín.
+      // Lo añadimos para que se vea instantáneo aunque Realtime tarde un poco
       setMessages((prev) => [...prev, data.message]);
       setInputValue('');
       setTimeout(scrollToBottom, 100);
@@ -166,7 +178,9 @@ export default function ChatPage() {
           ← Volver al expediente
         </button>
         <div className="flex flex-col items-center gap-0.5">
-          <div className="text-sm font-semibold">Chat con el cliente</div>
+          <div className="text-sm font-semibold">
+            Chat con {casoTitulo || 'el cliente'}
+          </div>
           <div className="text-[11px] text-slate-400">
             Expediente: <span className="font-mono">{casoId}</span>
           </div>
@@ -191,7 +205,8 @@ export default function ChatPage() {
 
         {!loading && messages.length === 0 && !error && (
           <div className="text-sm text-slate-400">
-            Todavía no hay mensajes. Envía el primero para iniciar la conversación con tu cliente.
+            Todavía no hay mensajes. Envía el primero para iniciar la
+            conversación con tu cliente.
           </div>
         )}
 
