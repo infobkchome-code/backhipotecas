@@ -745,35 +745,32 @@ export default function CaseDetailPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
-      {/* HEADER */}
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
-        <div>
-          <button
-            onClick={() => router.push('/portal')}
-            className="text-xs text-slate-400 hover:text-slate-200 mb-1"
-          >
-            ← Volver al panel de clientes
-          </button>
-          <h1 className="text-xl font-semibold">{caso.titulo}</h1>
-          <p className="text-xs text-slate-400">
-            Expediente hipotecario · creado el{' '}
-            {new Date(caso.created_at).toLocaleDateString('es-ES')}
-          </p>
+ <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+  <div>
+    {/* VOLVER */}
+    <button
+      onClick={() => router.push('/portal')}
+      className="text-xs text-slate-400 hover:text-slate-200 mb-1"
+    >
+      ← Volver al panel de clientes
+    </button>
 
-          <div className="flex flex-wrap items-center gap-2 mt-2">
-            {urgente && (
-              <span className="inline-flex items-center rounded-full bg-red-500/20 border border-red-500/60 px-2 py-0.5 text-[10px] font-semibold text-red-200 uppercase tracking-wide">
-                Urgente
-              </span>
-            )}
-            {badgeFechaTexto && (
-              <span className="inline-flex items-center rounded-full bg-amber-500/10 border border-amber-400/50 px-2 py-0.5 text-[10px] text-amber-200">
-                {badgeFechaTexto}
-              </span>
-            )}
-          </div>
-        </div>
-      </header>
+    {/* BOTÓN DEL CHAT */}
+    <Link
+      href={`/portal/case/${caso.id}/chat`}
+      className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-medium text-slate-950 shadow-sm hover:bg-emerald-400 mt-2"
+    >
+      💬 Abrir chat con cliente
+    </Link>
+
+    {/* TÍTULO */}
+    <h1 className="text-xl font-semibold mt-3">{caso.titulo}</h1>
+    <p className="text-xs text-slate-400">
+      Expediente hipotecario · creado el{' '}
+      {new Date(caso.created_at).toLocaleDateString('es-ES')}
+    </p>
+  </div>
+</header>
 
       <main className="max-w-4xl mx-auto px-6 py-6 space-y-6">
         {/* MENSAJES */}
