@@ -15,7 +15,7 @@ if (!supabaseUrl || !supabaseServiceKey) {
 const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
 
 // Nombre del bucket de storage
-const STORAGE_BUCKET = 'expediente-archivos';
+const bucket = 'expediente_documentos';
 
 export async function POST(
   req: NextRequest,
