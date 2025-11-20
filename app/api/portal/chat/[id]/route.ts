@@ -1,136 +1,157 @@
-import { NextResponse } from 'next/server';
+// app/api/portal/chat/[id]/route.ts
+import { NextRequest, NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
-// GET: lista de mensajes de un caso (gestor)
-export async function GET(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
-  try {
-    const casoId = params.id;
+// Desactivamos caché en este endpoint
+export const dynamic = 'force-dynamic';
 
-    const { data, error } = await supabase
-      .from('expediente_mensajes') // 👈 nombre de la tabla
-      .select('*')                 // 👈 seleccionamos todo, sin columnas raras
-      .eq('caso_id', casoId)
-      .order('created_at', { ascending: true });
+type Remitente = 'gestor' | 'cliente';
 
-    if (error) {
-      console.error('GET chat error:', error);
-      return NextResponse.json(
-        { ok: false, error: 'db_error' },
-        { status: 500 }
-      );
-    }
-
-    return NextResponse.json(
-      { ok: true, messages: data ?? [] },
-      { status: 200 }
-    );
-  } catch (e) {
-    console.error('Unexpected GET chat error:', e);
-    return NextResponse.json(
-      { ok: false, error: 'server_error' },
-      { status: 500 }
-    );
-  }
+interface NewMessagePayload {
+  remitente: Remitente;
+  mensaje?: string | null;
+  attachment_name?: string | null;
+  attachment_path?: string | null; // por si lo usas así
+  storage_path?: string | null;    // o así
 }
 
-// POST: mensaje nuevo (gestor o cliente)
-export async function POST(
-  req: Request,
+// GET /api/portal/chat/[id]
+// Devuelve todos los mensajes del caso
+export async function GET(
+  _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  try {
-    const casoId = params.id;
+  const casoId = params.id;
 
-    // ⬇️ Ahora leemos FormData (mensaje + posible archivo)
-    const form = await req.formData();
-    const mensaje = (form.get('mensaje') as string | null) ?? null;
-    const remitente = (form.get('remitente') as string) || 'gestor';
-    const file = form.get('file') as File | null;
-
-    if ((!mensaje || mensaje.trim() === '') && !file) {
-      return NextResponse.json(
-        { ok: false, error: 'missing_message' },
-        { status: 400 }
-      );
-    }
-
-    // 1) Comprobar que el caso existe
-    const { data: caso, error: casoError } = await supabase
-      .from('casos')
-      .select('id')
-      .eq('id', casoId)
-      .single();
-
-    if (casoError || !caso) {
-      console.error('case_not_found POST /portal/chat:', casoError);
-      return NextResponse.json(
-        { ok: false, error: 'case_not_found' },
-        { status: 404 }
-      );
-    }
-
-    let attachment_name: string | null = null;
-    let storage_path: string | null = null;
-
-    // 2) Si hay archivo, lo subimos al bucket "docs"
-    if (file) {
-      const cleanName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const fileName = `${Date.now()}_${cleanName}`;
-      const path = `${casoId}/${fileName}`;
-
-      // Supabase acepta Blob/File/ArrayBuffer, no hace falta Buffer
-      const { error: uploadError } = await supabase.storage
-        .from('docs')
-        .upload(path, file, {
-          contentType: file.type || 'application/octet-stream',
-          upsert: true,
-        });
-
-      if (uploadError) {
-        console.error('Upload chat file error:', uploadError);
-        return NextResponse.json(
-          { ok: false, error: 'upload_error' },
-          { status: 500 }
-        );
-      }
-
-      attachment_name = file.name;
-      storage_path = path;
-    }
-
-    // 3) Guardar mensaje en la tabla expediente_mensajes
-    const { data: inserted, error: insertError } = await supabase
-      .from('expediente_mensajes')
-      .insert({
-        caso_id: casoId,
-        remitente,
-        mensaje: mensaje && mensaje.trim() !== '' ? mensaje.trim() : null,
-        attachment_name,
-        storage_path,
-      })
-      .select('*')
-      .single();
-
-    if (insertError) {
-      console.error('Insert chat message error:', insertError);
-      return NextResponse.json(
-        { ok: false, error: 'db_error' },
-        { status: 500 }
-      );
-    }
-
+  if (!casoId) {
     return NextResponse.json(
-      { ok: true, message: inserted },
-      { status: 200 }
+      { ok: false, error: 'Falta el id del caso en la URL.' },
+      { status: 400 }
     );
-  } catch (e) {
-    console.error('Unexpected POST chat error:', e);
+  }
+
+  const { data, error } = await supabase
+    .from('caso_mensajes') // 👈 CAMBIA ESTE NOMBRE SI TU TABLA ES OTRA
+    .select(
+      `
+      id,
+      caso_id,
+      remitente,
+      mensaje,
+      attachment_name,
+      attachment_path,
+      storage_path,
+      created_at
+    `
+    )
+    .eq('caso_id', casoId)
+    .order('created_at', { ascending: true });
+
+  if (error) {
+    console.error('Error al obtener mensajes:', error);
     return NextResponse.json(
-      { ok: false, error: 'server_error' },
+      { ok: false, error: 'No se pudieron obtener los mensajes del expediente.' },
       { status: 500 }
     );
   }
+
+  return NextResponse.json({
+    ok: true,
+    messages: data ?? [],
+  });
+}
+
+// POST /api/portal/chat/[id]
+// Crea un nuevo mensaje en el chat del caso
+export async function POST(
+  req: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const casoId = params.id;
+
+  if (!casoId) {
+    return NextResponse.json(
+      { ok: false, error: 'Falta el id del caso en la URL.' },
+      { status: 400 }
+    );
+  }
+
+  let body: NewMessagePayload;
+  try {
+    body = (await req.json()) as NewMessagePayload;
+  } catch (e) {
+    console.error('Error parseando el JSON del cuerpo:', e);
+    return NextResponse.json(
+      { ok: false, error: 'Formato de cuerpo inválido. Debe ser JSON.' },
+      { status: 400 }
+    );
+  }
+
+  const {
+    remitente,
+    mensaje = null,
+    attachment_name = null,
+    attachment_path = null,
+    storage_path = null,
+  } = body;
+
+  if (!remitente || (remitente !== 'gestor' && remitente !== 'cliente')) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "El campo 'remitente' es obligatorio y debe ser 'gestor' o 'cliente'.",
+      },
+      { status: 400 }
+    );
+  }
+
+  if (!mensaje && !attachment_name) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'Debe enviarse al menos un mensaje de texto o un adjunto.',
+      },
+      { status: 400 }
+    );
+  }
+
+  const { data, error } = await supabase
+    .from('caso_mensajes') // 👈 CAMBIA ESTE NOMBRE SI TU TABLA ES OTRA
+    .insert({
+      caso_id: casoId,
+      remitente,
+      mensaje,
+      attachment_name,
+      attachment_path,
+      storage_path,
+    })
+    .select(
+      `
+      id,
+      caso_id,
+      remitente,
+      mensaje,
+      attachment_name,
+      attachment_path,
+      storage_path,
+      created_at
+    `
+    )
+    .single();
+
+  if (error) {
+    console.error('Error al insertar mensaje:', error);
+    return NextResponse.json(
+      { ok: false, error: 'No se pudo guardar el mensaje en la base de datos.' },
+      { status: 500 }
+    );
+  }
+
+  return NextResponse.json(
+    {
+      ok: true,
+      message: data,
+    },
+    { status: 201 }
+  );
 }
