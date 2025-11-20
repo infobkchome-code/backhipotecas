@@ -1,4 +1,3 @@
-// app/api/portal/chat/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
@@ -32,7 +31,7 @@ export async function GET(
 
   try {
     const { data, error } = await supabase
-      .from('expediente_mensajes') // 👈 CAMBIA SI TU TABLA SE LLAMA DISTINTO
+      .from('expediente_mensajes')
       .select(
         `
         id,
@@ -103,7 +102,7 @@ export async function POST(
 
   try {
     const { data, error } = await supabase
-      .from('caso_mensajes') // 👈 CAMBIA SI TU TABLA SE LLAMA DISTINTO
+      .from('expediente_mensajes') // 👈 AHORA IGUAL QUE EN EL GET
       .insert({
         caso_id: casoId,
         remitente,
