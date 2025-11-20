@@ -1,13 +1,23 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
-// GET: lista de mensajes de un caso (gestor)
-export async function GET(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+type RouteParams = {
+  params: { id: string };
+};
+
+// -------------------------
+// GET: lista de mensajes
+// -------------------------
+export async function GET(_req: Request, { params }: RouteParams) {
   try {
     const casoId = params.id;
+
+    if (!casoId) {
+      return NextResponse.json(
+        { error: 'missing_case_id' },
+        { status: 400 }
+      );
+    }
 
     const { data: mensajes, error } = await supabase
       .from('expediente_mensajes')
@@ -18,7 +28,7 @@ export async function GET(
     if (error) {
       console.error('Error GET /portal/chat:', error);
       return NextResponse.json(
-        { error: 'db_error' },
+        { error: 'db_error', details: error.message },
         { status: 500 }
       );
     }
@@ -27,29 +37,40 @@ export async function GET(
       { ok: true, mensajes: mensajes ?? [] },
       { status: 200 }
     );
-  } catch (e) {
+  } catch (e: any) {
     console.error('Error inesperado GET /portal/chat:', e);
-    return NextResponse.json({ error: 'server_error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'server_error', details: String(e?.message ?? e) },
+      { status: 500 }
+    );
   }
 }
 
-// POST: mensaje nuevo del gestor
-export async function POST(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
+// -------------------------
+// POST: mensaje nuevo gestor
+// -------------------------
+export async function POST(req: Request, { params }: RouteParams) {
   try {
     const casoId = params.id;
-    const { mensaje } = await req.json();
 
-    if (!mensaje || typeof mensaje !== 'string') {
+    if (!casoId) {
+      return NextResponse.json(
+        { error: 'missing_case_id' },
+        { status: 400 }
+      );
+    }
+
+    const body = await req.json().catch(() => null);
+    const mensaje = body?.mensaje;
+
+    if (!mensaje || typeof mensaje !== 'string' || mensaje.trim() === '') {
       return NextResponse.json(
         { error: 'missing_message' },
         { status: 400 }
       );
     }
 
-    // Comprobar que el caso existe (opcional pero sano)
+    // (Opcional) Comprobar que el caso existe
     const { data: caso, error: casoError } = await supabase
       .from('casos')
       .select('id')
@@ -64,12 +85,13 @@ export async function POST(
       );
     }
 
+    // Insertar mensaje como "gestor"
     const { data: insertData, error: insertError } = await supabase
       .from('expediente_mensajes')
       .insert({
         caso_id: casoId,
-        remitente: 'gestor',
-        mensaje,
+        remitente: 'gestor', // 👈 importante: tiene que coincidir con el tipo definido en la tabla
+        mensaje: mensaje.trim(),
       })
       .select('id, caso_id, remitente, mensaje, created_at')
       .single();
@@ -77,7 +99,10 @@ export async function POST(
     if (insertError) {
       console.error('Error insertando mensaje gestor:', insertError);
       return NextResponse.json(
-        { error: 'db_error' },
+        {
+          error: 'db_error',
+          details: insertError.message,
+        },
         { status: 500 }
       );
     }
@@ -86,8 +111,11 @@ export async function POST(
       { ok: true, mensaje: insertData },
       { status: 200 }
     );
-  } catch (e) {
+  } catch (e: any) {
     console.error('Error inesperado POST /portal/chat:', e);
-    return NextResponse.json({ error: 'server_error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'server_error', details: String(e?.message ?? e) },
+      { status: 500 }
+    );
   }
 }
