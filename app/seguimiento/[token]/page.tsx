@@ -214,7 +214,7 @@ export default function SeguimientoPage() {
   };
 
   // -------- SUBIR DOCUMENTO DE UN ITEM DEL CHECKLIST --------
-  const handleDocFileChange =
+    const handleDocFileChange =
     (docId: string) => async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file || !token || !caso) return;
@@ -223,45 +223,37 @@ export default function SeguimientoPage() {
       setUploadError(null);
 
       try {
-        const docInfo = DOC_ITEMS.find((d) => d.id === docId);
-        const docLabel = docInfo?.titulo ?? 'Documento';
+        // mandamos el archivo al endpoint que usa la SERVICE KEY
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('docId', docId);
 
-        const ext = file.name.split('.').pop();
-        const filePath = `${caso.id}/${docId}/${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2)}.${ext ?? 'file'}`;
+        const res = await fetch(`/api/seguimiento/upload/${token}`, {
+          method: 'POST',
+          body: formData,
+        });
 
-        // 1) Subir archivo al bucket
-        const { error: uploadErrorSupabase } = await supabase.storage
-          .from(STORAGE_BUCKET)
-          .upload(filePath, file);
+        const json: ApiChatResponse = await res.json();
 
-        if (uploadErrorSupabase) {
-          console.error('Error subiendo archivo cliente:', uploadErrorSupabase);
+        if (!res.ok || !json.ok || !json.mensaje) {
+          console.error('Error en upload cliente:', json.error);
           setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
           setUploadingDocId(null);
           e.target.value = '';
           return;
         }
 
-        // 2) Obtener URL pública
-        const { data: publicData } = supabase.storage
-          .from(STORAGE_BUCKET)
-          .getPublicUrl(filePath);
+        // añadimos el mensaje al chat para que el cliente lo vea
+        setMensajes((prev) => [...prev, json.mensaje]);
+        e.target.value = '';
+      } catch (err) {
+        console.error('Error inesperado subiendo archivo cliente:', err);
+        setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
+      } finally {
+        setUploadingDocId(null);
+      }
+    };
 
-        const publicUrl = publicData?.publicUrl ?? null;
-
-        // 3) Registrar mensaje en el chat (API seguimiento/chat)
-        const res = await fetch(`/api/seguimiento/chat/${token}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mensaje: `Documento subido: ${docLabel}`,
-            attachment_name: file.name,
-            attachment_path: publicUrl,
-            storage_path: filePath,
-          }),
-        });
 
         const json: ApiChatResponse = await res.json();
 
