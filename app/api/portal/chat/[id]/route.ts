@@ -1,150 +1,107 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabaseClient';
 
-export const runtime = 'nodejs';
-export const dynamic = 'force-dynamic';
-
-// ⚙️ Supabase desde variables de entorno
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('❌ Faltan variables de entorno de Supabase');
-}
-
-const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
-
-// GET /api/portal/chat/[id]
-// Devuelve todos los mensajes del caso
+/**
+ * GET → obtener todos los mensajes del chat de un caso
+ */
 export async function GET(
-  _req: NextRequest,
+  _req: Request,
   { params }: { params: { id: string } }
 ) {
   const casoId = params.id;
 
   if (!casoId) {
     return NextResponse.json(
-      { ok: false, error: 'Falta el id del caso en la URL.' },
+      { ok: false, error: 'Falta el id del caso en la URL' },
       { status: 400 }
     );
   }
 
-  try {
-    const { data, error } = await supabase
-      .from('expediente_mensajes')
-      .select(
-        `
-        id,
-        caso_id,
-        remitente,
-        mensaje,
-        attachment_name,
-        attachment_path,
-        storage_path,
-        created_at
+  const { data, error } = await supabase
+    .from('expediente_mensajes') // 👈 tu tabla real
+    .select(
       `
-      )
-      .eq('caso_id', casoId)
-      .order('created_at', { ascending: true });
+      id,
+      caso_id,
+      remitente,
+      mensaje,
+      attachment_name,
+      attachment_path,
+      storage_path,
+      created_at
+    `
+    )
+    .eq('caso_id', casoId)
+    .order('created_at', { ascending: true });
 
-    if (error) {
-      console.error('❌ Error Supabase GET /chat:', error);
-      return NextResponse.json(
-        { ok: false, error: 'No se pudieron obtener los mensajes.' },
-        { status: 500 }
-      );
-    }
-
+  if (error) {
+    console.error('Error GET chat:', error);
     return NextResponse.json(
-      {
-        ok: true,
-        messages: data ?? [],
-      },
-      { status: 200 }
-    );
-  } catch (e) {
-    console.error('❌ Excepción GET /chat:', e);
-    return NextResponse.json(
-      { ok: false, error: 'Error inesperado al obtener los mensajes.' },
+      { ok: false, error: 'No se pudieron cargar los mensajes' },
       { status: 500 }
     );
   }
+
+  return NextResponse.json({ ok: true, messages: data ?? [] });
 }
 
-// POST /api/portal/chat/[id]
-// Crea un nuevo mensaje en el chat del caso
+/**
+ * POST → enviar mensaje al chat
+ */
 export async function POST(
-  req: NextRequest,
+  req: Request,
   { params }: { params: { id: string } }
 ) {
   const casoId = params.id;
+  const body = await req.json();
 
-  if (!casoId) {
+  const { remitente, mensaje } = body as {
+    remitente?: 'cliente' | 'gestor';
+    mensaje?: string;
+  };
+
+  if (!remitente || !['cliente', 'gestor'].includes(remitente)) {
     return NextResponse.json(
-      { ok: false, error: 'Falta el id del caso en la URL.' },
+      { ok: false, error: 'Remitente no válido' },
       { status: 400 }
     );
   }
 
-  // Intentamos leer JSON; si falla, seguimos con body vacío
-  let body: any = {};
-  try {
-    body = await req.json();
-  } catch (e) {
-    console.warn('⚠️ No se pudo parsear JSON en POST /chat, body vacío:', e);
+  if (!mensaje || mensaje.trim().length === 0) {
+    return NextResponse.json(
+      { ok: false, error: 'El mensaje no puede estar vacío' },
+      { status: 400 }
+    );
   }
 
-  const remitente = body?.remitente || 'cliente'; // valor por defecto
-  const mensaje = body?.mensaje ?? null;
-  const attachment_name = body?.attachment_name ?? null;
-  const attachment_path = body?.attachment_path ?? null;
-  const storage_path = body?.storage_path ?? null;
-
-  try {
-    const { data, error } = await supabase
-      .from('expediente_mensajes') // 👈 AHORA IGUAL QUE EN EL GET
-      .insert({
-        caso_id: casoId,
-        remitente,
-        mensaje,
-        attachment_name,
-        attachment_path,
-        storage_path,
-      })
-      .select(
-        `
-        id,
-        caso_id,
-        remitente,
-        mensaje,
-        attachment_name,
-        attachment_path,
-        storage_path,
-        created_at
+  const { data, error } = await supabase
+    .from('expediente_mensajes') // 👈 misma tabla
+    .insert({
+      caso_id: casoId,
+      remitente,
+      mensaje: mensaje.trim(),
+    })
+    .select(
       `
-      )
-      .single();
+      id,
+      caso_id,
+      remitente,
+      mensaje,
+      attachment_name,
+      attachment_path,
+      storage_path,
+      created_at
+    `
+    )
+    .single();
 
-    if (error) {
-      console.error('❌ Error Supabase POST /chat:', error);
-      return NextResponse.json(
-        { ok: false, error: 'No se pudo guardar el mensaje.' },
-        { status: 500 }
-      );
-    }
-
+  if (error) {
+    console.error('Error POST chat:', error);
     return NextResponse.json(
-      {
-        ok: true,
-        message: data,
-      },
-      { status: 201 }
-    );
-  } catch (e) {
-    console.error('❌ Excepción POST /chat:', e);
-    return NextResponse.json(
-      { ok: false, error: 'Error inesperado al guardar el mensaje.' },
+      { ok: false, error: 'No se pudo guardar el mensaje' },
       { status: 500 }
     );
   }
+
+  return NextResponse.json({ ok: true, message: data });
 }
