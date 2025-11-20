@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// ⚠️ Usa SIEMPRE variables de entorno
+// ⚙️ Supabase desde variables de entorno
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -14,16 +14,6 @@ if (!supabaseUrl || !supabaseServiceKey) {
 }
 
 const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
-
-type Remitente = 'gestor' | 'cliente';
-
-interface NewMessagePayload {
-  remitente: Remitente;
-  mensaje?: string | null;
-  attachment_name?: string | null;
-  attachment_path?: string | null;
-  storage_path?: string | null;
-}
 
 // GET /api/portal/chat/[id]
 // Devuelve todos los mensajes del caso
@@ -42,7 +32,7 @@ export async function GET(
 
   try {
     const { data, error } = await supabase
-      .from('caso_mensajes') // 👈 CAMBIA AQUÍ SI TU TABLA SE LLAMA DISTINTO
+      .from('caso_mensajes') // 👈 CAMBIA SI TU TABLA SE LLAMA DISTINTO
       .select(
         `
         id,
@@ -97,48 +87,23 @@ export async function POST(
     );
   }
 
-  let body: NewMessagePayload;
+  // Intentamos leer JSON; si falla, seguimos con body vacío
+  let body: any = {};
   try {
-    body = (await req.json()) as NewMessagePayload;
+    body = await req.json();
   } catch (e) {
-    console.error('❌ Error parseando JSON en POST /chat:', e);
-    return NextResponse.json(
-      { ok: false, error: 'Cuerpo de la petición inválido. Debe ser JSON.' },
-      { status: 400 }
-    );
+    console.warn('⚠️ No se pudo parsear JSON en POST /chat, body vacío:', e);
   }
 
-  const {
-    remitente,
-    mensaje = null,
-    attachment_name = null,
-    attachment_path = null,
-    storage_path = null,
-  } = body;
-
-  if (!remitente || (remitente !== 'gestor' && remitente !== 'cliente')) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: "El campo 'remitente' es obligatorio y debe ser 'gestor' o 'cliente'.",
-      },
-      { status: 400 }
-    );
-  }
-
-  if (!mensaje && !attachment_name) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'Debes enviar al menos un mensaje de texto o un adjunto.',
-      },
-      { status: 400 }
-    );
-  }
+  const remitente = body?.remitente || 'cliente'; // valor por defecto
+  const mensaje = body?.mensaje ?? null;
+  const attachment_name = body?.attachment_name ?? null;
+  const attachment_path = body?.attachment_path ?? null;
+  const storage_path = body?.storage_path ?? null;
 
   try {
     const { data, error } = await supabase
-      .from('caso_mensajes') // 👈 CAMBIA AQUÍ SI TU TABLA SE LLAMA DISTINTO
+      .from('caso_mensajes') // 👈 CAMBIA SI TU TABLA SE LLAMA DISTINTO
       .insert({
         caso_id: casoId,
         remitente,
