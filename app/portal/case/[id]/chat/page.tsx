@@ -163,7 +163,7 @@ export default function CaseChatPage() {
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'expediente_mensajes', // 👈 nombre real de la tabla
+          table: 'expediente_mensajes',
           filter: `caso_id=eq.${casoId}`,
         },
         (payload) => {
