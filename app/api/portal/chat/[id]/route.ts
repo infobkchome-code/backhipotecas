@@ -1,23 +1,13 @@
 import { NextResponse } from 'next/server';
 import { supabase } from '@/lib/supabaseClient';
 
-type RouteParams = {
-  params: { id: string };
-};
-
-// -------------------------
-// GET: lista de mensajes
-// -------------------------
-export async function GET(_req: Request, { params }: RouteParams) {
+// GET: lista de mensajes de un caso (gestor)
+export async function GET(
+  _req: Request,
+  { params }: { params: { id: string } }
+) {
   try {
     const casoId = params.id;
-
-    if (!casoId) {
-      return NextResponse.json(
-        { error: 'missing_case_id' },
-        { status: 400 }
-      );
-    }
 
     const { data: mensajes, error } = await supabase
       .from('expediente_mensajes')
@@ -28,7 +18,7 @@ export async function GET(_req: Request, { params }: RouteParams) {
     if (error) {
       console.error('Error GET /portal/chat:', error);
       return NextResponse.json(
-        { error: 'db_error', details: error.message },
+        { ok: false, error: 'db_error' },
         { status: 500 }
       );
     }
@@ -37,40 +27,71 @@ export async function GET(_req: Request, { params }: RouteParams) {
       { ok: true, mensajes: mensajes ?? [] },
       { status: 200 }
     );
-  } catch (e: any) {
+  } catch (e) {
     console.error('Error inesperado GET /portal/chat:', e);
     return NextResponse.json(
-      { error: 'server_error', details: String(e?.message ?? e) },
+      { ok: false, error: 'server_error' },
       { status: 500 }
     );
   }
 }
 
-// -------------------------
-// POST: mensaje nuevo gestor
-// -------------------------
-export async function POST(req: Request, { params }: RouteParams) {
+// POST: mensaje nuevo del gestor
+export async function POST(
+  req: Request,
+  { params }: { params: { id: string } }
+) {
   try {
     const casoId = params.id;
 
-    if (!casoId) {
+    const contentType = req.headers.get('content-type') || '';
+    let mensaje: string | null = null;
+
+    // ---- 1) Intentar leer JSON normal ----
+    if (contentType.includes('application/json')) {
+      const body = await req.json().catch(() => null as any);
+      if (body && typeof body.mensaje === 'string') {
+        mensaje = body.mensaje.trim();
+      } else if (body && typeof body.message === 'string') {
+        mensaje = body.message.trim();
+      }
+    }
+    // ---- 2) Intentar leer multipart/form-data (por si el front manda FormData) ----
+    else if (contentType.includes('multipart/form-data')) {
+      const formData = await req.formData();
+      const raw =
+        formData.get('mensaje') ||
+        formData.get('message') ||
+        formData.get('text');
+
+      if (typeof raw === 'string') {
+        mensaje = raw.trim();
+      }
+    }
+    // ---- 3) Último intento: leer como texto y parsear JSON a mano ----
+    else {
+      const rawText = await req.text();
+      try {
+        const body = JSON.parse(rawText);
+        if (body && typeof body.mensaje === 'string') {
+          mensaje = body.mensaje.trim();
+        } else if (body && typeof body.message === 'string') {
+          mensaje = body.message.trim();
+        }
+      } catch {
+        // no pasa nada, mensaje se queda null
+      }
+    }
+
+    if (!mensaje || mensaje.length === 0) {
+      console.warn('POST /portal/chat missing_message');
       return NextResponse.json(
-        { error: 'missing_case_id' },
+        { ok: false, error: 'missing_message' },
         { status: 400 }
       );
     }
 
-    const body = await req.json().catch(() => null);
-    const mensaje = body?.mensaje;
-
-    if (!mensaje || typeof mensaje !== 'string' || mensaje.trim() === '') {
-      return NextResponse.json(
-        { error: 'missing_message' },
-        { status: 400 }
-      );
-    }
-
-    // (Opcional) Comprobar que el caso existe
+    // Comprobar que el caso existe
     const { data: caso, error: casoError } = await supabase
       .from('casos')
       .select('id')
@@ -80,29 +101,25 @@ export async function POST(req: Request, { params }: RouteParams) {
     if (casoError || !caso) {
       console.error('Caso no encontrado en POST /portal/chat:', casoError);
       return NextResponse.json(
-        { error: 'case_not_found' },
+        { ok: false, error: 'case_not_found' },
         { status: 404 }
       );
     }
 
-    // Insertar mensaje como "gestor"
     const { data: insertData, error: insertError } = await supabase
       .from('expediente_mensajes')
       .insert({
         caso_id: casoId,
-        remitente: 'gestor', // 👈 importante: tiene que coincidir con el tipo definido en la tabla
-        mensaje: mensaje.trim(),
+        remitente: 'gestor',
+        mensaje,
       })
       .select('id, caso_id, remitente, mensaje, created_at')
       .single();
 
-    if (insertError) {
+    if (insertError || !insertData) {
       console.error('Error insertando mensaje gestor:', insertError);
       return NextResponse.json(
-        {
-          error: 'db_error',
-          details: insertError.message,
-        },
+        { ok: false, error: 'db_error' },
         { status: 500 }
       );
     }
@@ -111,10 +128,10 @@ export async function POST(req: Request, { params }: RouteParams) {
       { ok: true, mensaje: insertData },
       { status: 200 }
     );
-  } catch (e: any) {
+  } catch (e) {
     console.error('Error inesperado POST /portal/chat:', e);
     return NextResponse.json(
-      { error: 'server_error', details: String(e?.message ?? e) },
+      { ok: false, error: 'server_error' },
       { status: 500 }
     );
   }
