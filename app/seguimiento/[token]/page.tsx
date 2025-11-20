@@ -72,10 +72,10 @@ const DOC_ITEMS: DocItem[] = [
   { id: 'renta', titulo: 'Declaración de la renta', obligatorio: true },
   { id: 'extractos_6m', titulo: 'Extractos bancarios últimos 6 meses', obligatorio: false },
   { id: 'extractos_3_6m', titulo: 'Extractos bancarios 3–6 meses', obligatorio: false },
-];
+};
 
 // 🔧 NOMBRE DE TU BUCKET DE STORAGE (CÁMBIALO SI ES OTRO)
-const STORAGE_BUCKET = 'expediente-archivos';
+const STORAGE_BUCKET = 'expediente-archivos'; // ahora mismo no se usa aquí, pero lo dejamos por si luego lo necesitas
 
 export default function SeguimientoPage() {
   const params = useParams<{ token: string }>();
@@ -214,7 +214,7 @@ export default function SeguimientoPage() {
   };
 
   // -------- SUBIR DOCUMENTO DE UN ITEM DEL CHECKLIST --------
-    const handleDocFileChange =
+  const handleDocFileChange =
     (docId: string) => async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file || !token || !caso) return;
@@ -223,7 +223,7 @@ export default function SeguimientoPage() {
       setUploadError(null);
 
       try {
-        // mandamos el archivo al endpoint que usa la SERVICE KEY
+        // Mandamos el archivo al endpoint que usa la SERVICE KEY
         const formData = new FormData();
         formData.append('file', file);
         formData.append('docId', docId);
@@ -237,9 +237,11 @@ export default function SeguimientoPage() {
 
         if (!res.ok || !json.ok || !json.mensaje) {
           console.error('Error en upload cliente:', json.error);
-          setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
-          setUploadingDocId(null);
+          setUploadError(
+            'No se ha podido subir el archivo. Inténtalo de nuevo.'
+          );
           e.target.value = '';
+          setUploadingDocId(null);
           return;
         }
 
@@ -248,30 +250,6 @@ export default function SeguimientoPage() {
         e.target.value = '';
       } catch (err) {
         console.error('Error inesperado subiendo archivo cliente:', err);
-        setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
-      } finally {
-        setUploadingDocId(null);
-      }
-    };
-
-
-        const json: ApiChatResponse = await res.json();
-
-        if (!res.ok || !json.ok || !json.mensaje) {
-          console.error('Error guardando mensaje de archivo:', json.error);
-          setUploadError(
-            'El archivo se ha subido, pero no se ha registrado correctamente.'
-          );
-          setUploadingDocId(null);
-          e.target.value = '';
-          return;
-        }
-
-        // Lo añadimos al chat del cliente para que lo vea
-        setMensajes((prev) => [...prev, json.mensaje]);
-        e.target.value = '';
-      } catch (err) {
-        console.error('Error inesperado subiendo archivo:', err);
         setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
       } finally {
         setUploadingDocId(null);
