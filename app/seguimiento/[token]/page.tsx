@@ -2,7 +2,6 @@
 
 import { useEffect, useState, ChangeEvent } from 'react';
 import { useParams } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
 
 type SeguimientoCaso = {
   id: string;
@@ -72,10 +71,6 @@ const DOC_ITEMS: DocItem[] = [
   { id: 'extractos_6m', titulo: 'Extractos bancarios últimos 6 meses', obligatorio: false },
   { id: 'extractos_3_6m', titulo: 'Extractos bancarios 3–6 meses', obligatorio: false },
 ];
-
-// ✅ IMPORTANTE: pon aquí EXACTAMENTE el nombre del bucket de Supabase Storage
-// (el mismo que estás usando en el panel interno).
-const STORAGE_BUCKET = 'expediente_documentos'; // cámbialo si tu bucket se llama distinto
 
 export default function SeguimientoPage() {
   const params = useParams<{ token: string }>();
@@ -212,7 +207,7 @@ export default function SeguimientoPage() {
     }
   };
 
-  // ---------------- SUBIR DOCUMENTO DESDE EL CLIENTE (COMO ANTES) ----------------
+  // ---------------- SUBIR DOCUMENTO (usa API backend upload) ----------------
   const handleDocFileChange =
     (docId: string) => async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -222,70 +217,25 @@ export default function SeguimientoPage() {
       setUploadError(null);
 
       try {
-        const docInfo = DOC_ITEMS.find((d) => d.id === docId);
-        const docLabel = docInfo?.titulo ?? 'Documento';
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('docId', docId);
 
-        const ext = file.name.split('.').pop();
-        const safeName = file.name.replace(/\s+/g, '_');
+        const res = await fetch(`/api/seguimiento/upload/${token}`, {
+          method: 'POST',
+          body: formData,
+        });
 
-        // ruta dentro del bucket
-        const filePath = `${caso.id}/${docId}/${Date.now()}.${ext ?? 'file'}`;
+        const json: ApiChatResponse = await res.json();
 
-        // 1) subir a Supabase Storage (front, como antes)
-        const { error: uploadErrorSupabase } = await supabase.storage
-          .from(STORAGE_BUCKET)
-          .upload(filePath, file);
-
-        if (uploadErrorSupabase) {
-          console.error('Error subiendo archivo cliente:', uploadErrorSupabase);
+        if (!res.ok || !json.ok || !json.mensaje) {
+          console.error('Error en upload cliente:', json.error);
           setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
           setUploadingDocId(null);
           e.target.value = '';
           return;
         }
 
-        // 2) obtener URL pública
-        const { data: publicData, error: publicError } = supabase.storage
-          .from(STORAGE_BUCKET)
-          .getPublicUrl(filePath);
-
-        if (publicError || !publicData) {
-          console.error('Error obteniendo URL pública:', publicError);
-          setUploadError(
-            'El archivo se ha subido, pero no se ha podido generar el enlace.'
-          );
-          setUploadingDocId(null);
-          e.target.value = '';
-          return;
-        }
-
-        const publicUrl = publicData.publicUrl;
-
-        // 3) registrar mensaje en el chat del cliente (API seguimiento/chat)
-        const res = await fetch(`/api/seguimiento/chat/${token}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mensaje: `Documento subido: ${docLabel}`,
-            attachment_name: safeName,
-            attachment_path: publicUrl,
-            storage_path: filePath,
-          }),
-        });
-
-        const json: ApiChatResponse = await res.json();
-
-        if (!res.ok || !json.ok || !json.mensaje) {
-          console.error('Error guardando mensaje de archivo:', json.error);
-          setUploadError(
-            'El archivo se ha subido, pero no se ha podido registrar el mensaje.'
-          );
-          setUploadingDocId(null);
-          e.target.value = '';
-          return;
-        }
-
-        // 4) añadir el mensaje al chat
         setMensajes((prev) => [...prev, json.mensaje]);
         e.target.value = '';
       } catch (err) {
