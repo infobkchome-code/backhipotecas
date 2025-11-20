@@ -547,4 +547,18 @@ export default function SeguimientoPage() {
               type="button"
               onClick={handleSendMessage}
               disabled={!nuevoMensaje.trim() || enviando}
-              className="px-4 py-2 rounded-md bg-emerald-500 text-xs font-medium text-slate-950
+              className="px-4 py-2 rounded-md bg-emerald-500 text-xs font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {enviando ? 'Enviando…' : 'Enviar'}
+            </button>
+          </div>
+        </section>
+
+        <footer className="text-xs text-slate-500">
+          Última actualización:{' '}
+          {new Date(caso.updated_at).toLocaleString('es-ES')}
+        </footer>
+      </main>
+    </div>
+  );
+}
