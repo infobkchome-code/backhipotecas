@@ -97,24 +97,31 @@ export async function GET(
 
 /**
  * POST → enviar mensaje al chat
- * Permite mensaje, adjunto o ambos.
- * También pone cliente_tiene_mensajes_nuevos = TRUE si escribe el cliente.
+ * - Admite JSON o FormData
+ * - Permite mensaje, adjunto o ambos
+ * - Si escribe el cliente → marca cliente_tiene_mensajes_nuevos = TRUE
  */
 export async function POST(
   req: Request,
   { params }: { params: { id: string } }
 ) {
   const casoId = params.id;
-  let body: any;
 
+  // 1) Intentar leer JSON; si falla, probar con FormData
+  let body: any = {};
   try {
     body = await req.json();
-  } catch (e) {
-    console.error('Error parseando JSON en POST /chat:', e);
-    return NextResponse.json(
-      { ok: false, error: 'Cuerpo de la petición inválido' } as ApiPostResponse,
-      { status: 400 }
-    );
+  } catch {
+    try {
+      const form = await req.formData();
+      body = Object.fromEntries(form.entries());
+    } catch (e) {
+      console.error('Error leyendo body en POST /chat:', e);
+      return NextResponse.json(
+        { ok: false, error: 'Cuerpo de la petición inválido' } as ApiPostResponse,
+        { status: 400 }
+      );
+    }
   }
 
   const {
@@ -138,12 +145,12 @@ export async function POST(
     );
   }
 
-  const trimmedMensaje = mensaje?.trim() ?? '';
+  const trimmedMensaje = mensaje?.toString().trim() ?? '';
   const hasMensaje = trimmedMensaje.length > 0;
   const hasAdjunto =
     !!attachment_name || !!attachment_path || !!storage_path;
 
-  // ⛔ Ahora solo damos error si NO hay ni mensaje ni adjunto
+  // ⛔ Solo error si NO hay ni mensaje ni adjunto
   if (!hasMensaje && !hasAdjunto) {
     return NextResponse.json(
       {
@@ -154,7 +161,7 @@ export async function POST(
     );
   }
 
-  // 1) Insertar mensaje (incluyendo posibles adjuntos)
+  // 2) Insertar mensaje (incluyendo posibles adjuntos)
   const { data, error } = await supabaseAdmin
     .from('expediente_mensajes')
     .insert({
@@ -187,7 +194,7 @@ export async function POST(
     );
   }
 
-  // 2) Si el remitente es el cliente, marcar que hay mensajes/documentos nuevos
+  // 3) Si el remitente es el cliente, marcar que hay mensajes/documentos nuevos
   if (remitente === 'cliente') {
     const { error: updError } = await supabaseAdmin
       .from('casos')
@@ -201,8 +208,6 @@ export async function POST(
       );
     }
   }
-
-  // 3) Si el remitente es el gestor, más adelante aquí haremos el envío de email al cliente
 
   return NextResponse.json({ ok: true, message: data } as ApiPostResponse);
 }
