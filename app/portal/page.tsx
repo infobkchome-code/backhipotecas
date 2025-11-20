@@ -20,7 +20,7 @@ type Caso = {
   docs_completados?: number;
   // prioridad manual
   prioridad_manual_alta?: boolean | null;
-  // 🔔 NUEVO: indicador de mensajes nuevos del cliente
+  // 🔔 indicador de mensajes nuevos del cliente
   cliente_tiene_mensajes_nuevos?: boolean | null;
 };
 
@@ -223,6 +223,66 @@ export default function DashboardPage() {
     };
 
     load();
+  }, []);
+
+  // -----------------------------
+  // Realtime: actualizar lista cuando cambien casos
+  // -----------------------------
+  useEffect(() => {
+    const channel = supabase
+      .channel('casos-dashboard')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'casos',
+        },
+        (payload: any) => {
+          const nuevo = payload.new as any;
+          const antiguo = payload.old as any;
+
+          setCasos((prev) => {
+            // DELETE → quitarlo
+            if (payload.eventType === 'DELETE') {
+              return prev.filter((c) => c.id !== antiguo.id);
+            }
+
+            // INSERT → añadir si no está
+            if (payload.eventType === 'INSERT') {
+              const existe = prev.some((c) => c.id === nuevo.id);
+              if (existe) return prev;
+              return [
+                {
+                  ...(nuevo as Caso),
+                },
+                ...prev,
+              ];
+            }
+
+            // UPDATE → mezclar datos nuevos
+            if (payload.eventType === 'UPDATE') {
+              return prev.map((c) =>
+                c.id === nuevo.id
+                  ? ({
+                      ...c,
+                      ...nuevo,
+                    } as Caso)
+                  : c
+              );
+            }
+
+            return prev;
+          });
+        }
+      )
+      .subscribe((status) => {
+        console.log('Realtime casos status:', status);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   // -----------------------------
