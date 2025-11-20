@@ -24,13 +24,13 @@ type CasoBasic = {
 
 type ApiListResponse = {
   ok: boolean;
-  messages?: ChatMessage[];
+  mensajes?: ChatMessage[]; // 👈 nombre real que devuelve la API
   error?: string;
 };
 
 type ApiSendResponse = {
   ok: boolean;
-  message?: ChatMessage;
+  mensaje?: ChatMessage; // 👈 nombre real que devuelve la API
   error?: string;
 };
 
@@ -130,7 +130,7 @@ export default function CaseChatPage() {
           return;
         }
 
-        const msgs = (json.messages ?? []).map(normalizeMessage);
+        const msgs = (json.mensajes ?? []).map(normalizeMessage);
         setMessages(msgs);
         setLoading(false);
 
@@ -183,41 +183,41 @@ export default function CaseChatPage() {
     };
   }, [casoId]);
 
-  // ------ envío de mensajes ------
+  // ------ envío de mensajes (solo texto, acorde con la API actual) ------
   const handleSend = async (e: FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() && !fileToUpload) return;
+    // Por ahora la API solo soporta texto, no adjuntos.
+    if (!newMessage.trim()) return;
     if (!casoId) return;
 
     setSending(true);
     setErrorMsg(null);
 
     try {
-      const formData = new FormData();
-      formData.append('remitente', 'gestor');
-      formData.append('mensaje', newMessage.trim());
-      if (fileToUpload) {
-        formData.append('file', fileToUpload);
-      }
-
       const res = await fetch(`/api/portal/chat/${casoId}`, {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          mensaje: newMessage.trim(),
+        }),
       });
 
       const json: ApiSendResponse = await res.json();
 
-      if (!res.ok || !json.ok || !json.message) {
+      if (!res.ok || !json.ok || !json.mensaje) {
         console.error('Error enviando mensaje chat:', json.error);
         setErrorMsg('No se ha podido enviar el mensaje.');
         setSending(false);
         return;
       }
 
-      const msg = normalizeMessage(json.message);
+      const msg = normalizeMessage(json.mensaje);
       upsertMessage(msg);
 
       setNewMessage('');
+      // dejamos preparado el manejo de adjuntos para más adelante
       setFileToUpload(null);
       setUploadPreviewName(null);
       setTimeout(scrollToBottom, 50);
@@ -452,13 +452,13 @@ export default function CaseChatPage() {
                 />
               </label>
               <span className="text-[10px] text-slate-500">
-                PDF, imágenes, documentos…
+                (Los adjuntos los activaremos cuando ampliemos la API)
               </span>
             </div>
 
             <button
               type="submit"
-              disabled={sending || (!newMessage.trim() && !fileToUpload)}
+              disabled={sending || !newMessage.trim()}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-emerald-500 text-slate-950 text-sm font-medium hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {sending ? 'Enviando…' : 'Enviar mensaje'}
