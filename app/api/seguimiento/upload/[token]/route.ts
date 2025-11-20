@@ -13,7 +13,7 @@ if (!supabaseUrl || !supabaseServiceKey) {
 
 const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
 
-// 🔴 MUY IMPORTANTE → nombre EXACTO del bucket en Supabase Storage
+// ⬅️ NOMBRE EXACTO DEL BUCKET EN SUPABASE STORAGE
 const STORAGE_BUCKET = 'expediente_documentos';
 
 export async function POST(
@@ -23,7 +23,7 @@ export async function POST(
   const token = params.token;
 
   try {
-    // 1) Buscar el caso por seguimiento_token
+    // 1) Buscar caso por seguimiento_token
     const { data: caso, error: casoError } = await supabase
       .from('casos')
       .select('id, titulo')
@@ -50,7 +50,7 @@ export async function POST(
       );
     }
 
-    // etiqueta bonita para el mensaje
+    // Etiqueta bonita para el mensaje
     const docLabels: Record<string, string> = {
       dni_comprador: 'DNI/NIE de comprador(es)',
       dni_cliente: 'DNI/NIE del cliente',
@@ -63,7 +63,6 @@ export async function POST(
     };
     const docLabel = docLabels[docId] ?? 'Documento';
 
-    const ext = file.name.split('.').pop();
     const safeName = file.name.replace(/\s+/g, '_');
     const filePath = `${caso.id}/${docId}/${Date.now()}-${safeName}`;
 
@@ -77,20 +76,24 @@ export async function POST(
 
     if (uploadError) {
       console.error('❌ Error subiendo archivo a storage:', uploadError);
+      // 🔴 ahora devolvemos el mensaje real de Supabase
       return NextResponse.json(
-        { ok: false, error: 'No se ha podido subir el archivo' },
+        {
+          ok: false,
+          error: `Supabase storage: ${uploadError.message ?? 'error desconocido'}`,
+        },
         { status: 500 }
       );
     }
 
-    // 4) Obtener URL pública
+    // 4) URL pública
     const { data: publicData } = supabase.storage
       .from(STORAGE_BUCKET)
       .getPublicUrl(filePath);
 
     const publicUrl = publicData.publicUrl;
 
-    // 5) Crear mensaje en expediente_mensajes (remitente = cliente)
+    // 5) Crear mensaje en expediente_mensajes
     const textoMensaje = `Documento subido: ${docLabel}`;
 
     const { data: mensaje, error: msgError } = await supabase
@@ -122,24 +125,26 @@ export async function POST(
       return NextResponse.json(
         {
           ok: false,
-          error:
-            'El archivo se ha subido, pero no se ha podido registrar el mensaje.',
+          error: `DB mensaje archivo: ${msgError?.message ?? 'error desconocido'}`,
         },
         { status: 500 }
       );
     }
 
-    // 6) Marcar que el cliente tiene mensajes nuevos
+    // 6) Marcar mensajes nuevos para el gestor
     await supabase
       .from('casos')
       .update({ cliente_tiene_mensajes_nuevos: true })
       .eq('id', caso.id);
 
     return NextResponse.json({ ok: true, mensaje }, { status: 201 });
-  } catch (e) {
+  } catch (e: any) {
     console.error('❌ Excepción en upload seguimiento:', e);
     return NextResponse.json(
-      { ok: false, error: 'Error inesperado subiendo el archivo' },
+      {
+        ok: false,
+        error: `Excepción upload: ${e?.message ?? 'error inesperado'}`,
+      },
       { status: 500 }
     );
   }
