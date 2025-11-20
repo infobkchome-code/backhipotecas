@@ -1,15 +1,8 @@
 'use client';
 
-import {
-  useEffect,
-  useState,
-  useRef,
-  FormEvent,
-  ChangeEvent,
-} from 'react';
+import { useEffect, useState, useRef, FormEvent, ChangeEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { supabase } from '@/lib/supabaseClient';
 
 type ChatMessage = {
   id: string;
@@ -22,470 +15,199 @@ type ChatMessage = {
   created_at: string;
 };
 
-type CasoBasic = {
-  id: string;
-  titulo: string;
-  seguimiento_token: string | null;
-};
-
 type ApiListResponse = {
   ok: boolean;
-  mensajes?: ChatMessage[];
+  messages?: ChatMessage[];
   error?: string;
 };
 
-type ApiSendResponse = {
+type ApiPostResponse = {
   ok: boolean;
-  mensaje?: ChatMessage;
+  message?: ChatMessage;
   error?: string;
 };
 
-export default function CaseChatPage() {
+export default function ChatPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const casoId = params?.id as string;
+  const casoId = params?.id;
 
-  const [caso, setCaso] = useState<CasoBasic | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [inputValue, setInputValue] = useState('');
+  const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  const [newMessage, setNewMessage] = useState('');
-  const [fileToUpload, setFileToUpload] = useState<File | null>(null);
-  const [uploadPreviewName, setUploadPreviewName] =
-    useState<string | null>(null);
-
-  const [isClientOnline, setIsClientOnline] = useState(false);
-  const [isClientTyping, setIsClientTyping] = useState(false);
-
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
-
-  // ---------------- helpers ----------------
-
+  // Scroll automático al último mensaje
   const scrollToBottom = () => {
-    if (messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    if (bottomRef.current) {
+      bottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
   };
 
-  const normalizeMessage = (raw: any): ChatMessage => ({
-    id: raw.id,
-    caso_id: raw.caso_id,
-    remitente: raw.remitente,
-    mensaje: raw.mensaje ?? null,
-    attachment_name: raw.attachment_name ?? null,
-    attachment_path: raw.attachment_path ?? raw.storage_path ?? null,
-    storage_path: raw.storage_path ?? raw.attachment_path ?? null,
-    created_at: raw.created_at,
-  });
-
-  const upsertMessage = (msg: ChatMessage) => {
-    setMessages((prev) => {
-      const exists = prev.some((m) => m.id === msg.id);
-      if (exists) {
-        return prev.map((m) => (m.id === msg.id ? msg : m));
-      }
-      return [...prev, msg].sort(
-        (a, b) =>
-          new Date(a.created_at).getTime() -
-          new Date(b.created_at).getTime()
-      );
-    });
-  };
-
-  // ------------- cargar caso + mensajes iniciales -------------
-
+  // Cargar mensajes iniciales
   useEffect(() => {
-    const load = async () => {
+    const fetchMessages = async () => {
       if (!casoId) return;
 
       setLoading(true);
-      setErrorMsg(null);
+      setError(null);
 
       try {
-        // 1) Datos básicos del caso
-        const { data: casoData, error: casoError } = await supabase
-          .from('casos')
-          .select('id, titulo, seguimiento_token')
-          .eq('id', casoId)
-          .single();
-
-        if (casoError || !casoData) {
-          console.error('Error cargando caso en chat:', casoError);
-          setErrorMsg('No se ha encontrado el expediente para el chat.');
-          setLoading(false);
-          return;
-        }
-
-        setCaso(casoData as CasoBasic);
-
-        // 2) Mensajes iniciales vía API
         const res = await fetch(`/api/portal/chat/${casoId}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
-          cache: 'no-store',
         });
 
-        const json: ApiListResponse = await res.json();
+        const data: ApiListResponse = await res.json();
 
-        if (!res.ok || !json.ok) {
-          console.error('Error API chat GET:', json.error);
-          setErrorMsg('No se han podido cargar los mensajes del chat.');
-          setLoading(false);
-          return;
+        if (!res.ok || !data.ok) {
+          console.error('Error cargando chat:', data.error);
+          setError(data.error ?? 'No se pudieron cargar los mensajes.');
+          setMessages([]);
+        } else {
+          setMessages(data.messages ?? []);
         }
-
-        const msgs = (json.mensajes ?? []).map(normalizeMessage);
-        setMessages(msgs);
+      } catch (e: any) {
+        console.error('Excepción cargando chat:', e);
+        setError(e?.message ?? 'Error inesperado al cargar el chat.');
+      } finally {
         setLoading(false);
-
-        setTimeout(scrollToBottom, 100);
-      } catch (e) {
-        console.error('Error general cargando chat:', e);
-        setErrorMsg('Ha ocurrido un error cargando el chat.');
-        setLoading(false);
+        // pequeño delay para que existan los elementos en el DOM
+        setTimeout(scrollToBottom, 200);
       }
     };
 
-    load();
+    fetchMessages();
   }, [casoId]);
 
-  // ------------- realtime: nuevos mensajes + presencia cliente -------------
-
-  useEffect(() => {
-    if (!casoId) return;
-
-    const channel = supabase
-      .channel(`chat-caso-${casoId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'expediente_mensajes',
-          filter: `caso_id=eq.${casoId}`,
-        },
-        (payload) => {
-          const raw = payload.new as any;
-          const msg = normalizeMessage(raw);
-          upsertMessage(msg);
-          setTimeout(scrollToBottom, 50);
-        }
-      )
-      // opcional: presencia / typing
-      .on('broadcast', { event: 'cliente_online' }, () => {
-        setIsClientOnline(true);
-        setTimeout(() => setIsClientOnline(false), 30000);
-      })
-      .on('broadcast', { event: 'cliente_typing' }, () => {
-        setIsClientTyping(true);
-        setTimeout(() => setIsClientTyping(false), 3000);
-      })
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [casoId]);
-
-  // ------------- envío de mensajes -------------
-
-  const handleSend = async (e: FormEvent) => {
+  // Enviar mensaje nuevo
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!newMessage.trim() && !fileToUpload) return;
-    if (!casoId) return;
+    setError(null);
+
+    const trimmed = inputValue.trim();
+    if (!trimmed || !casoId) return;
 
     setSending(true);
-    setErrorMsg(null);
 
     try {
-      const formData = new FormData();
-      formData.append('remitente', 'gestor');
-      formData.append('mensaje', newMessage.trim());
-      if (fileToUpload) {
-        formData.append('file', fileToUpload);
-      }
-
       const res = await fetch(`/api/portal/chat/${casoId}`, {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          remitente: 'gestor', // o 'cliente' según quién use este portal
+          mensaje: trimmed,
+        }),
       });
 
-      const json: ApiSendResponse = await res.json();
+      const data: ApiPostResponse = await res.json();
 
-      if (!res.ok || !json.ok || !json.mensaje) {
-        console.error('Error enviando mensaje chat:', json.error);
-        setErrorMsg('No se ha podido enviar el mensaje.');
-        setSending(false);
+      if (!res.ok || !data.ok || !data.message) {
+        console.error('Error enviando mensaje chat:', data.error);
+        setError(data.error ?? 'No se ha podido enviar el mensaje.');
         return;
       }
 
-      const msg = normalizeMessage(json.mensaje);
-      upsertMessage(msg);
-
-      setNewMessage('');
-      setFileToUpload(null);
-      setUploadPreviewName(null);
-      setTimeout(scrollToBottom, 50);
-    } catch (e) {
-      console.error('Error general enviando mensaje:', e);
-      setErrorMsg('Ha ocurrido un error enviando el mensaje.');
+      // Añadimos el mensaje devuelto por la API al estado
+      setMessages((prev) => [...prev, data.message!]);
+      setInputValue('');
+      setTimeout(scrollToBottom, 100);
+    } catch (e: any) {
+      console.error('Excepción enviando mensaje chat:', e);
+      setError(e?.message ?? 'No se ha podido enviar el mensaje.');
     } finally {
       setSending(false);
     }
   };
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0] ?? null;
-    setFileToUpload(file);
-    setUploadPreviewName(file ? file.name : null);
+  const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setInputValue(e.target.value);
   };
-
-  const handleClearFile = () => {
-    setFileToUpload(null);
-    setUploadPreviewName(null);
-  };
-
-  // descarga/ver adjunto
-  const handleDownloadAttachment = async (msg: ChatMessage) => {
-    const path = msg.attachment_path || msg.storage_path;
-    if (!path) return;
-
-    const { data, error } = await supabase.storage
-      .from('docs')
-      .createSignedUrl(path, 60 * 10);
-
-    if (error || !data?.signedUrl) {
-      console.error('Error creando signed URL adjunto:', error);
-      setErrorMsg('No se ha podido abrir el adjunto.');
-      return;
-    }
-
-    window.open(data.signedUrl, '_blank');
-  };
-
-  // ------------- render -------------
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
-        <div className="text-sm text-slate-300">Cargando chat…</div>
-      </div>
-    );
-  }
-
-  if (!caso) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col items-center justify-center px-4">
-        <p className="text-lg font-semibold mb-2">
-          Expediente no encontrado
-        </p>
-        <Link
-          href="/portal"
-          className="text-emerald-400 text-sm hover:underline"
-        >
-          ← Volver al panel de clientes
-        </Link>
-      </div>
-    );
-  }
-
-  const origin =
-    typeof window !== 'undefined'
-      ? window.location.origin
-      : 'https://backhipotecas.vercel.app';
-
-  const trackingUrl = caso.seguimiento_token
-    ? `${origin}/seguimiento/${caso.seguimiento_token}`
-    : '';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col">
-      {/* HEADER */}
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between gap-3">
-        <div className="flex flex-col">
-          <button
-            onClick={() => router.push(`/portal/case/${caso.id}`)}
-            className="text-xs text-slate-400 hover:text-slate-200 mb-1 text-left"
-          >
-            ← Volver al expediente
-          </button>
-          <h1 className="text-lg font-semibold flex items-center gap-2">
-            Chat con el cliente
-            <span className="text-xs font-normal text-slate-400">
-              · {caso.titulo}
-            </span>
-          </h1>
-          {trackingUrl && (
-            <p className="text-[11px] text-slate-500 mt-0.5">
-              Enlace cliente:{' '}
-              <span className="text-emerald-400 break-all">
-                {trackingUrl}
-              </span>
-            </p>
-          )}
+    <div className="flex flex-col h-full min-h-screen bg-slate-950 text-slate-50">
+      {/* Cabecera */}
+      <div className="border-b border-slate-800 px-4 py-3 flex items-center justify-between">
+        <button
+          className="text-sm text-slate-300 hover:text-white"
+          onClick={() => router.back()}
+        >
+          ← Volver al expediente
+        </button>
+        <div className="text-sm font-medium">
+          Chat con el cliente · <span className="text-slate-400">Expediente id: {casoId}</span>
         </div>
+        <span className="text-xs px-2 py-1 rounded-full bg-slate-800 text-slate-300">
+          Cliente offline
+        </span>
+      </div>
 
-        <div className="flex flex-col items-end gap-1">
-          <span
-            className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] border ${
-              isClientOnline
-                ? 'border-emerald-500 text-emerald-300 bg-emerald-900/40'
-                : 'border-slate-600 text-slate-300 bg-slate-900'
-            }`}
-          >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                isClientOnline ? 'bg-emerald-400' : 'bg-slate-500'
-              }`}
-            />
-            {isClientOnline ? 'Cliente conectado' : 'Cliente offline'}
-          </span>
-          {isClientTyping && (
-            <span className="text-[10px] text-emerald-300">
-              El cliente está escribiendo…
-            </span>
-          )}
-        </div>
-      </header>
-
-      {/* CUERPO */}
-      <main className="flex-1 flex flex-col max-w-4xl mx-auto w-full px-4 md:px-6 py-4 gap-4">
-        {/* Mensajes de error */}
-        {errorMsg && (
-          <div className="rounded-md border border-red-600 bg-red-950/60 px-4 py-2 text-xs text-red-100">
-            {errorMsg}
+      {/* Mensajes */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-2">
+        {error && (
+          <div className="mb-2 rounded-md bg-red-900/40 border border-red-600 px-3 py-2 text-sm text-red-200">
+            {error}
           </div>
         )}
 
-        {/* Área de mensajes */}
-        <div className="flex-1 min-h-0 border border-slate-800 rounded-lg bg-slate-900/60 p-3 flex flex-col">
-          <div className="flex-1 min-h-0 overflow-y-auto space-y-3 pr-1">
-            {messages.length === 0 && (
-              <div className="h-full flex items-center justify-center">
-                <p className="text-xs text-slate-500 text-center max-w-xs">
-                  Todavía no hay mensajes. Envía el primero para iniciar la
-                  conversación con tu cliente.
-                </p>
-              </div>
-            )}
+        {loading && (
+          <div className="text-sm text-slate-400">Cargando mensajes...</div>
+        )}
 
-            {messages.map((msg) => {
-              const isGestor = msg.remitente === 'gestor';
-              const filePath =
-                msg.attachment_path || msg.storage_path;
-              const hasFile = !!filePath;
-
-              return (
-                <div
-                  key={msg.id}
-                  className={`flex ${
-                    isGestor ? 'justify-end' : 'justify-start'
-                  }`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-lg px-3 py-2 text-xs shadow-sm border ${
-                      isGestor
-                        ? 'bg-emerald-600 text-slate-950 border-emerald-500'
-                        : 'bg-slate-800 text-slate-100 border-slate-700'
-                    }`}
-                  >
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-semibold opacity-80">
-                        {isGestor ? 'Tú (gestor)' : 'Cliente'}
-                      </span>
-                      <span className="text-[10px] opacity-70">
-                        {new Date(
-                          msg.created_at
-                        ).toLocaleString('es-ES')}
-                      </span>
-                    </div>
-
-                    {msg.mensaje && (
-                      <p className="whitespace-pre-wrap text-[11px] leading-snug">
-                        {msg.mensaje}
-                      </p>
-                    )}
-
-                    {hasFile && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleDownloadAttachment(msg)
-                        }
-                        className={`mt-2 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] border ${
-                          isGestor
-                            ? 'border-emerald-800 bg-emerald-700/40 text-slate-950 hover:bg-emerald-600/60'
-                            : 'border-slate-600 bg-slate-900/60 text-slate-100 hover:bg-slate-800'
-                        }`}
-                      >
-                        📎 {msg.attachment_name || 'Ver adjunto'}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-
-            <div ref={messagesEndRef} />
+        {!loading && messages.length === 0 && !error && (
+          <div className="text-sm text-slate-400">
+            Todavía no hay mensajes. Envía el primero para iniciar la conversación con tu cliente.
           </div>
-        </div>
+        )}
 
-        {/* Área de escritura */}
-        <form
-          onSubmit={handleSend}
-          className="border border-slate-800 rounded-lg bg-slate-900/80 p-3 flex flex-col gap-2"
-        >
-          {uploadPreviewName && (
-            <div className="flex items-center justify-between gap-2 text-[11px] text-slate-200 bg-slate-800/80 px-2 py-1 rounded-md">
-              <span className="truncate">📎 {uploadPreviewName}</span>
-              <button
-                type="button"
-                onClick={handleClearFile}
-                className="text-slate-300 hover:text-red-300 text-xs"
-              >
-                Quitar
-              </button>
-            </div>
-          )}
-
-          <textarea
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Escribe un mensaje para tu cliente…"
-            rows={2}
-            className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-50 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 resize-none"
-          />
-
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <label className="inline-flex items-center gap-1 text-[11px] text-slate-300 cursor-pointer px-2 py-1 rounded-md border border-slate-700 bg-slate-900 hover:bg-slate-800">
-                📎 Adjuntar archivo
-                <input
-                  type="file"
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-              </label>
-              <span className="text-[10px] text-slate-500">
-                PDF, imágenes, documentos…
-              </span>
-            </div>
-
-            <button
-              type="submit"
-              disabled={
-                sending ||
-                (!newMessage.trim() && !fileToUpload)
-              }
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-emerald-500 text-slate-950 text-sm font-medium hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
+        {messages.map((msg) => {
+          const isGestor = msg.remitente === 'gestor';
+          return (
+            <div
+              key={msg.id}
+              className={`flex ${isGestor ? 'justify-end' : 'justify-start'}`}
             >
-              {sending ? 'Enviando…' : 'Enviar mensaje'}
-            </button>
-          </div>
-        </form>
-      </main>
+              <div
+                className={`max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+                  isGestor
+                    ? 'bg-emerald-600 text-white rounded-br-none'
+                    : 'bg-slate-800 text-slate-50 rounded-bl-none'
+                }`}
+              >
+                {msg.mensaje && <div className="whitespace-pre-wrap">{msg.mensaje}</div>}
+                <div className="mt-1 text-[11px] opacity-70 text-right">
+                  {new Date(msg.created_at).toLocaleString()}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        <div ref={bottomRef} />
+      </div>
+
+      {/* Caja de texto */}
+      <form
+        onSubmit={handleSubmit}
+        className="border-t border-slate-800 px-4 py-3 flex gap-2 items-center bg-slate-950/95"
+      >
+        <input
+          type="text"
+          value={inputValue}
+          onChange={handleChange}
+          placeholder="Escribe un mensaje..."
+          className="flex-1 rounded-full bg-slate-900 border border-slate-700 px-4 py-2 text-sm outline-none focus:border-emerald-500"
+        />
+        <button
+          type="submit"
+          disabled={sending || !inputValue.trim()}
+          className="rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 text-sm font-medium"
+        >
+          {sending ? 'Enviando…' : 'Enviar mensaje'}
+        </button>
+      </form>
     </div>
   );
 }
