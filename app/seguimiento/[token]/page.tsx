@@ -75,7 +75,7 @@ const DOC_ITEMS: DocItem[] = [
 
 // ✅ IMPORTANTE: pon aquí EXACTAMENTE el nombre del bucket de Supabase Storage
 // (el mismo que estás usando en el panel interno).
-const STORAGE_BUCKET = 'expediente-documentos'; // cámbialo si tu bucket se llama distinto
+const STORAGE_BUCKET = 'expediente_documentos'; // cámbialo si tu bucket se llama distinto
 
 export default function SeguimientoPage() {
   const params = useParams<{ token: string }>();
