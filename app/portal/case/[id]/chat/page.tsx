@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, FormEvent, ChangeEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
+import { supabase } from '@/lib/supabaseClient'; // 👈 cliente del navegador
 
 type ChatMessage = {
   id: string;
@@ -39,14 +39,13 @@ export default function ChatPage() {
   const [inputValue, setInputValue] = useState('');
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  // Scroll automático al último mensaje
   const scrollToBottom = () => {
     if (bottomRef.current) {
       bottomRef.current.scrollIntoView({ behavior: 'smooth', block: 'end' });
     }
   };
 
-  // Cargar mensajes iniciales
+  // 1) Cargar mensajes iniciales
   useEffect(() => {
     const fetchMessages = async () => {
       if (!casoId) return;
@@ -74,12 +73,41 @@ export default function ChatPage() {
         setError(e?.message ?? 'Error inesperado al cargar el chat.');
       } finally {
         setLoading(false);
-        // pequeño delay para que existan los elementos en el DOM
         setTimeout(scrollToBottom, 200);
       }
     };
 
     fetchMessages();
+  }, [casoId]);
+
+  // 2) Suscripción Realtime: escuchar mensajes nuevos de este expediente
+  useEffect(() => {
+    if (!casoId) return;
+
+    const channel = supabase
+      .channel(`expediente-mensajes-${casoId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'expediente_mensajes',
+          filter: `caso_id=eq.${casoId}`,
+        },
+        (payload) => {
+          const nuevo = payload.new as ChatMessage;
+          setMessages((prev) => [...prev, nuevo]);
+          setTimeout(scrollToBottom, 100);
+        }
+      )
+      .subscribe((status) => {
+        console.log('Realtime chat status:', status);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [casoId]);
 
   // Enviar mensaje nuevo
@@ -97,7 +125,7 @@ export default function ChatPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          remitente: 'gestor', // o 'cliente' según quién use este portal
+          remitente: 'gestor', // 👈 aquí puedes poner 'cliente' en el portal de cliente
           mensaje: trimmed,
         }),
       });
@@ -110,8 +138,9 @@ export default function ChatPage() {
         return;
       }
 
-      // Añadimos el mensaje devuelto por la API al estado
-      setMessages((prev) => [...prev, data.message!]);
+      // NO hace falta hacer push aquí, la suscripción Realtime también lo añadirá,
+      // pero lo dejamos para que se vea instantáneo incluso si Realtime tarda un pelín.
+      setMessages((prev) => [...prev, data.message]);
       setInputValue('');
       setTimeout(scrollToBottom, 100);
     } catch (e: any) {
@@ -136,12 +165,16 @@ export default function ChatPage() {
         >
           ← Volver al expediente
         </button>
-        <div className="text-sm font-medium">
-          Chat con el cliente · <span className="text-slate-400">Expediente id: {casoId}</span>
+        <div className="flex flex-col items-center gap-0.5">
+          <div className="text-sm font-semibold">Chat con el cliente</div>
+          <div className="text-[11px] text-slate-400">
+            Expediente: <span className="font-mono">{casoId}</span>
+          </div>
         </div>
-        <span className="text-xs px-2 py-1 rounded-full bg-slate-800 text-slate-300">
-          Cliente offline
-        </span>
+        <div className="flex items-center gap-2 text-xs">
+          <span className="h-2 w-2 rounded-full bg-slate-500" />
+          <span className="text-slate-300">Cliente offline</span>
+        </div>
       </div>
 
       {/* Mensajes */}
@@ -164,11 +197,18 @@ export default function ChatPage() {
 
         {messages.map((msg) => {
           const isGestor = msg.remitente === 'gestor';
+          const inicial = isGestor ? 'G' : 'C';
+
           return (
             <div
               key={msg.id}
               className={`flex ${isGestor ? 'justify-end' : 'justify-start'}`}
             >
+              {!isGestor && (
+                <div className="mr-2 flex h-7 w-7 items-center justify-center rounded-full bg-slate-800 text-[11px] font-semibold text-slate-200">
+                  {inicial}
+                </div>
+              )}
               <div
                 className={`max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
                   isGestor
@@ -176,11 +216,18 @@ export default function ChatPage() {
                     : 'bg-slate-800 text-slate-50 rounded-bl-none'
                 }`}
               >
-                {msg.mensaje && <div className="whitespace-pre-wrap">{msg.mensaje}</div>}
-                <div className="mt-1 text-[11px] opacity-70 text-right">
+                {msg.mensaje && (
+                  <div className="whitespace-pre-wrap">{msg.mensaje}</div>
+                )}
+                <div className="mt-1 text-[10px] opacity-70 text-right">
                   {new Date(msg.created_at).toLocaleString()}
                 </div>
               </div>
+              {isGestor && (
+                <div className="ml-2 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-700 text-[11px] font-semibold text-white">
+                  {inicial}
+                </div>
+              )}
             </div>
           );
         })}
@@ -205,7 +252,7 @@ export default function ChatPage() {
           disabled={sending || !inputValue.trim()}
           className="rounded-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed px-4 py-2 text-sm font-medium"
         >
-          {sending ? 'Enviando…' : 'Enviar mensaje'}
+          {sending ? 'Enviando…' : 'Enviar'}
         </button>
       </form>
     </div>
