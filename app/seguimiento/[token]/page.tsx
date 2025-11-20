@@ -27,7 +27,6 @@ type MensajeChat = {
   remitente: 'gestor' | 'cliente';
   mensaje: string | null;
   created_at: string;
-  // adjuntos
   attachment_name?: string | null;
   attachment_path?: string | null;
   storage_path?: string | null;
@@ -56,7 +55,7 @@ const ESTADO_LABEL: Record<string, string> = {
   denegado: 'Denegado',
 };
 
-// 📄 Lista de documentos que verá el cliente
+// ---------------- DOCUMENTOS QUE VE EL CLIENTE ----------------
 type DocItem = {
   id: string;
   titulo: string;
@@ -66,13 +65,17 @@ type DocItem = {
 const DOC_ITEMS: DocItem[] = [
   { id: 'dni_comprador', titulo: 'DNI/NIE de comprador(es)', obligatorio: true },
   { id: 'dni_cliente', titulo: 'DNI/NIE del cliente', obligatorio: true },
-  { id: 'nominas_3m', titulo: 'Nominas de los ultimos 3 meses', obligatorio: true },
+  { id: 'nominas_3m', titulo: 'Nóminas de los últimos 3 meses', obligatorio: true },
   { id: 'contrato_trabajo', titulo: 'Contrato de trabajo', obligatorio: true },
   { id: 'vida_laboral', titulo: 'Informe de vida laboral', obligatorio: true },
-  { id: 'renta', titulo: 'Declaracion de la renta', obligatorio: true },
-  { id: 'extractos_6m', titulo: 'Extractos bancarios ultimos 6 meses', obligatorio: false },
-  { id: 'extractos_3_6m', titulo: 'Extractos bancarios 3-6 meses', obligatorio: false },
+  { id: 'renta', titulo: 'Declaración de la renta', obligatorio: true },
+  { id: 'extractos_6m', titulo: 'Extractos bancarios últimos 6 meses', obligatorio: false },
+  { id: 'extractos_3_6m', titulo: 'Extractos bancarios 3–6 meses', obligatorio: false },
 ];
+
+// ✅ IMPORTANTE: pon aquí EXACTAMENTE el nombre del bucket de Supabase Storage
+// (el mismo que estás usando en el panel interno).
+const STORAGE_BUCKET = 'expediente-archivos'; // cámbialo si tu bucket se llama distinto
 
 export default function SeguimientoPage() {
   const params = useParams<{ token: string }>();
@@ -168,8 +171,6 @@ export default function SeguimientoPage() {
 
   useEffect(() => {
     loadChat();
-
-    // pequeño refresco cada 10s
     const interval = setInterval(() => {
       loadChat();
     }, 10000);
@@ -178,6 +179,7 @@ export default function SeguimientoPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  // ---------------- ENVIAR MENSAJE TEXTO ----------------
   const handleSendMessage = async () => {
     if (!nuevoMensaje.trim() || !token) return;
 
@@ -210,7 +212,7 @@ export default function SeguimientoPage() {
     }
   };
 
-  // -------- SUBIR DOCUMENTO DE UN ITEM DEL CHECKLIST --------
+  // ---------------- SUBIR DOCUMENTO DESDE EL CLIENTE (COMO ANTES) ----------------
   const handleDocFileChange =
     (docId: string) => async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -220,29 +222,70 @@ export default function SeguimientoPage() {
       setUploadError(null);
 
       try {
-        // Mandamos el archivo al endpoint que usa la SERVICE KEY
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('docId', docId);
+        const docInfo = DOC_ITEMS.find((d) => d.id === docId);
+        const docLabel = docInfo?.titulo ?? 'Documento';
 
-        const res = await fetch(`/api/seguimiento/upload/${token}`, {
+        const ext = file.name.split('.').pop();
+        const safeName = file.name.replace(/\s+/g, '_');
+
+        // ruta dentro del bucket
+        const filePath = `${caso.id}/${docId}/${Date.now()}.${ext ?? 'file'}`;
+
+        // 1) subir a Supabase Storage (front, como antes)
+        const { error: uploadErrorSupabase } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .upload(filePath, file);
+
+        if (uploadErrorSupabase) {
+          console.error('Error subiendo archivo cliente:', uploadErrorSupabase);
+          setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
+          setUploadingDocId(null);
+          e.target.value = '';
+          return;
+        }
+
+        // 2) obtener URL pública
+        const { data: publicData, error: publicError } = supabase.storage
+          .from(STORAGE_BUCKET)
+          .getPublicUrl(filePath);
+
+        if (publicError || !publicData) {
+          console.error('Error obteniendo URL pública:', publicError);
+          setUploadError(
+            'El archivo se ha subido, pero no se ha podido generar el enlace.'
+          );
+          setUploadingDocId(null);
+          e.target.value = '';
+          return;
+        }
+
+        const publicUrl = publicData.publicUrl;
+
+        // 3) registrar mensaje en el chat del cliente (API seguimiento/chat)
+        const res = await fetch(`/api/seguimiento/chat/${token}`, {
           method: 'POST',
-          body: formData,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mensaje: `Documento subido: ${docLabel}`,
+            attachment_name: safeName,
+            attachment_path: publicUrl,
+            storage_path: filePath,
+          }),
         });
 
         const json: ApiChatResponse = await res.json();
 
         if (!res.ok || !json.ok || !json.mensaje) {
-          console.error('Error en upload cliente:', json.error);
+          console.error('Error guardando mensaje de archivo:', json.error);
           setUploadError(
-            'No se ha podido subir el archivo. Inténtalo de nuevo.'
+            'El archivo se ha subido, pero no se ha podido registrar el mensaje.'
           );
-          e.target.value = '';
           setUploadingDocId(null);
+          e.target.value = '';
           return;
         }
 
-        // añadimos el mensaje al chat para que el cliente lo vea
+        // 4) añadir el mensaje al chat
         setMensajes((prev) => [...prev, json.mensaje]);
         e.target.value = '';
       } catch (err) {
@@ -428,7 +471,7 @@ export default function SeguimientoPage() {
           )}
         </section>
 
-        {/* CHAT CON TU GESTOR (SOLO TEXTO + VER ARCHIVOS SUBIDOS) */}
+        {/* CHAT CON TU GESTOR */}
         <section className="rounded-lg border border-emerald-700 bg-emerald-950/30 p-4 space-y-3">
           <h2 className="text-sm font-semibold text-emerald-100">
             Chat con tu gestor
@@ -504,18 +547,4 @@ export default function SeguimientoPage() {
               type="button"
               onClick={handleSendMessage}
               disabled={!nuevoMensaje.trim() || enviando}
-              className="px-4 py-2 rounded-md bg-emerald-500 text-xs font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {enviando ? 'Enviando…' : 'Enviar'}
-            </button>
-          </div>
-        </section>
-
-        <footer className="text-xs text-slate-500">
-          Última actualización:{' '}
-          {new Date(caso.updated_at).toLocaleString('es-ES')}
-        </footer>
-      </main>
-    </div>
-  );
-}
+              className="px-4 py-2 rounded-md bg-emerald-500 text-xs font-medium text-slate-950
