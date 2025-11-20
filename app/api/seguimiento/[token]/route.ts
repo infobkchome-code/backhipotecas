@@ -1,95 +1,86 @@
-import { NextResponse } from "next/server";
-import { supabase } from "@/lib/supabaseClient";
+import { NextResponse } from 'next/server';
+import { supabase } from '@/lib/supabaseClient';
+
+type CasoRow = {
+  id: string;
+  titulo: string | null;
+  estado: string | null;
+  progreso: number | null;
+  notas: string | null;
+  created_at: string;
+  updated_at: string;
+  seguimiento_token: string | null;
+};
 
 export async function GET(
-  req: Request,
+  _req: Request,
   { params }: { params: { token: string } }
 ) {
-  const token = params.token;
+  try {
+    const token = params.token;
 
-  // 1) Buscar caso por token
-  const { data: caso, error: casoError } = await supabase
-    .from("casos")
-    .select("id")
-    .eq("seguimiento_token", token)
-    .single();
+    // 1) Buscar el caso por el token de seguimiento
+    const { data: caso, error: casoError } = await supabase
+      .from('casos')
+      .select(
+        `
+        id,
+        titulo,
+        estado,
+        progreso,
+        notas,
+        created_at,
+        updated_at,
+        seguimiento_token
+      `
+      )
+      .eq('seguimiento_token', token)
+      .single<CasoRow>();
 
-  if (casoError || !caso) {
+    if (casoError || !caso) {
+      console.error('Caso no encontrado para token:', token, casoError);
+      return NextResponse.json(
+        { error: 'not_found' },
+        { status: 404 }
+      );
+    }
+
+    // 2) Cargar sólo los logs visibles para el cliente
+    const { data: logs, error: logsError } = await supabase
+      .from('expediente_logs')
+      .select('id, created_at, tipo, descripcion')
+      .eq('caso_id', caso.id)
+      .eq('visible_cliente', true)
+      .order('created_at', { ascending: true });
+
+    if (logsError) {
+      console.error('Error cargando logs seguimiento:', logsError);
+      return NextResponse.json(
+        { error: 'logs_error' },
+        { status: 500 }
+      );
+    }
+
+    // 3) Normalizar respuesta para el front
+    const respuesta = {
+      id: caso.id,
+      titulo: caso.titulo ?? 'Tu expediente hipotecario',
+      estado: caso.estado ?? 'en_estudio',
+      progreso: caso.progreso ?? 0,
+      notas: caso.notas ?? null,
+      created_at: caso.created_at,
+      updated_at: caso.updated_at,
+    };
+
     return NextResponse.json(
-      { error: "not_found" },
-      { status: 404 }
+      { data: respuesta, logs: logs ?? [] },
+      { status: 200 }
     );
-  }
-
-  // 2) Cargar mensajes visibles para el cliente
-  const { data: mensajes, error: msgError } = await supabase
-    .from("mensajes_cliente")
-    .select("*")
-    .eq("caso_id", caso.id)
-    .eq("visible_para_cliente", true)
-    .order("created_at", { ascending: true });
-
-  if (msgError) {
+  } catch (e) {
+    console.error('Error inesperado en GET /api/seguimiento/[token]:', e);
     return NextResponse.json(
-      { error: "load_error" },
+      { error: 'server_error' },
       { status: 500 }
     );
   }
-
-  return NextResponse.json(
-    {
-      ok: true,
-      mensajes,
-    },
-    { status: 200 }
-  );
-}
-
-export async function POST(
-  req: Request,
-  { params }: { params: { token: string } }
-) {
-  const token = params.token;
-  const body = await req.json();
-  const { contenido } = body;
-
-  if (!contenido || contenido.trim().length === 0) {
-    return NextResponse.json(
-      { error: "empty_message" },
-      { status: 400 }
-    );
-  }
-
-  // 1) Localizar caso
-  const { data: caso, error: casoError } = await supabase
-    .from("casos")
-    .select("id")
-    .eq("seguimiento_token", token)
-    .single();
-
-  if (casoError || !caso) {
-    return NextResponse.json(
-      { error: "not_found" },
-      { status: 404 }
-    );
-  }
-
-  // 2) Insertar mensaje (remitente: cliente)
-  const { error: insertError } = await supabase
-    .from("mensajes_cliente")
-    .insert({
-      caso_id: caso.id,
-      remitente: "cliente",
-      contenido,
-      visible_para_cliente: true,
-    });
-
-  if (insertError) {
-    return NextResponse.json(
-      { error: "insert_error" },
-      { status: 500 }
-    );
-  }
-
-  return NextResponse.json({ ok: true });
 }
