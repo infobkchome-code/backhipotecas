@@ -66,16 +66,13 @@ type DocItem = {
 const DOC_ITEMS: DocItem[] = [
   { id: 'dni_comprador', titulo: 'DNI/NIE de comprador(es)', obligatorio: true },
   { id: 'dni_cliente', titulo: 'DNI/NIE del cliente', obligatorio: true },
-  { id: 'nominas_3m', titulo: 'Nóminas de los últimos 3 meses', obligatorio: true },
+  { id: 'nominas_3m', titulo: 'Nominas de los ultimos 3 meses', obligatorio: true },
   { id: 'contrato_trabajo', titulo: 'Contrato de trabajo', obligatorio: true },
   { id: 'vida_laboral', titulo: 'Informe de vida laboral', obligatorio: true },
-  { id: 'renta', titulo: 'Declaración de la renta', obligatorio: true },
-  { id: 'extractos_6m', titulo: 'Extractos bancarios últimos 6 meses', obligatorio: false },
-  { id: 'extractos_3_6m', titulo: 'Extractos bancarios 3–6 meses', obligatorio: false },
-};
-
-// 🔧 NOMBRE DE TU BUCKET DE STORAGE (CÁMBIALO SI ES OTRO)
-const STORAGE_BUCKET = 'expediente-archivos'; // ahora mismo no se usa aquí, pero lo dejamos por si luego lo necesitas
+  { id: 'renta', titulo: 'Declaracion de la renta', obligatorio: true },
+  { id: 'extractos_6m', titulo: 'Extractos bancarios ultimos 6 meses', obligatorio: false },
+  { id: 'extractos_3_6m', titulo: 'Extractos bancarios 3-6 meses', obligatorio: false },
+];
 
 export default function SeguimientoPage() {
   const params = useParams<{ token: string }>();
