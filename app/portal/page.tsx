@@ -20,6 +20,8 @@ type Caso = {
   docs_completados?: number;
   // prioridad manual
   prioridad_manual_alta?: boolean | null;
+  // 🔔 NUEVO: indicador de mensajes nuevos del cliente
+  cliente_tiene_mensajes_nuevos?: boolean | null;
 };
 
 const ESTADOS = [
@@ -161,7 +163,8 @@ export default function DashboardPage() {
           urgente,
           fecha_limite,
           updated_at,
-          prioridad_manual_alta
+          prioridad_manual_alta,
+          cliente_tiene_mensajes_nuevos
         `
         )
         .eq('user_id', user.id)
@@ -324,6 +327,10 @@ export default function DashboardPage() {
     return total > 0 && comp < total;
   }).length;
 
+  const casosConMensajesNuevos = casos.filter(
+    (c) => c.cliente_tiene_mensajes_nuevos
+  ).length;
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
       {/* -------------------------------- HEADER -------------------------------- */}
@@ -339,6 +346,12 @@ export default function DashboardPage() {
             <p className="text-xs text-slate-400 -mt-0.5">
               Panel de expedientes
             </p>
+            {casosConMensajesNuevos > 0 && (
+              <p className="text-[11px] text-emerald-300 mt-0.5">
+                {casosConMensajesNuevos} expediente
+                {casosConMensajesNuevos !== 1 && 's'} con nuevos mensajes
+              </p>
+            )}
           </div>
         </div>
 
@@ -636,9 +649,17 @@ export default function DashboardPage() {
                   >
                     {/* EXPEDIENTE */}
                     <div className="col-span-2">
-                      <p className="text-slate-100 font-medium">
-                        {c.titulo}
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <p className="text-slate-100 font-medium">
+                          {c.titulo}
+                        </p>
+                        {c.cliente_tiene_mensajes_nuevos && (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-700 px-2 py-0.5 text-[11px] font-semibold text-white">
+                            <span className="h-2 w-2 rounded-full bg-emerald-300" />
+                            Nuevo mensaje
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-slate-500">
                         Último movimiento:{' '}
                         {new Date(
