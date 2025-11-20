@@ -1,160 +1,134 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
 export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
+// Supabase con SERVICE ROLE (solo en el backend)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('❌ Faltan variables de entorno Supabase en /api/seguimiento/upload');
+  console.error('❌ Faltan variables de entorno de Supabase en upload');
 }
 
-const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceKey!);
+const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
 
-// 👇 Usa el mismo bucket que estés usando desde el panel admin
+// Nombre del bucket de storage
 const STORAGE_BUCKET = 'expediente-archivos';
 
-type Remitente = 'cliente' | 'gestor';
-
-type MensajeRow = {
-  id: string;
-  caso_id: string;
-  remitente: Remitente;
-  mensaje: string | null;
-  created_at: string;
-  attachment_name?: string | null;
-  attachment_path?: string | null;
-  storage_path?: string | null;
-};
-
-type ApiUploadResponse = {
-  ok: boolean;
-  mensaje?: MensajeRow;
-  error?: string;
-};
-
-async function getCasoIdFromToken(token: string): Promise<string | null> {
-  const { data, error } = await supabaseAdmin
-    .from('casos')
-    .select('id')
-    .eq('seguimiento_token', token)
-    .single();
-
-  if (error || !data) {
-    console.error('Error buscando caso por token en upload:', error);
-    return null;
-  }
-
-  return data.id as string;
-}
-
 export async function POST(
-  req: Request,
+  req: NextRequest,
   { params }: { params: { token: string } }
 ) {
   const token = params.token;
 
-  if (!token) {
-    return NextResponse.json(
-      { ok: false, error: 'Falta token' } as ApiUploadResponse,
-      { status: 400 }
-    );
-  }
+  try {
+    // 1) Buscar el caso por el seguimiento_token
+    const { data: caso, error: casoError } = await supabase
+      .from('casos')
+      .select('id, titulo, cliente_tiene_mensajes_nuevos')
+      .eq('seguimiento_token', token)
+      .single();
 
-  const casoId = await getCasoIdFromToken(token);
-  if (!casoId) {
-    return NextResponse.json(
-      { ok: false, error: 'not_found' } as ApiUploadResponse,
-      { status: 404 }
-    );
-  }
+    if (casoError || !caso) {
+      console.error('❌ Caso no encontrado para token en upload:', casoError);
+      return NextResponse.json(
+        { ok: false, error: 'Expediente no encontrado' },
+        { status: 404 }
+      );
+    }
 
-  const formData = await req.formData();
-  const file = formData.get('file');
-  const docId = formData.get('docId')?.toString() ?? 'documento';
+    // 2) Leer el form-data (file + docId)
+    const formData = await req.formData();
+    const file = formData.get('file') as File | null;
+    const docId = (formData.get('docId') as string | null) ?? 'documento';
 
-  if (!(file instanceof File)) {
-    return NextResponse.json(
-      { ok: false, error: 'Archivo no recibido' } as ApiUploadResponse,
-      { status: 400 }
-    );
-  }
+    if (!file) {
+      return NextResponse.json(
+        { ok: false, error: 'No se ha enviado ningún archivo' },
+        { status: 400 }
+      );
+    }
 
-  const originalName = file.name || 'documento_cliente';
-  const ext = originalName.split('.').pop() ?? 'file';
-  const path = `${casoId}/${docId}/${Date.now()}-${Math.random()
-    .toString(36)
-    .slice(2)}.${ext}`;
+    // 3) Subir al bucket
+    const ext = file.name.split('.').pop();
+    const safeName = file.name.replace(/\s+/g, '_');
+    const filePath = `${caso.id}/${Date.now()}-${docId}.${ext ?? 'file'}`;
 
-  // 1) Subir al bucket usando SERVICE KEY (no hay problema de permisos)
-  const { error: uploadError } = await supabaseAdmin
-    .storage
-    .from(STORAGE_BUCKET)
-    .upload(path, file);
+    const { error: uploadError } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
 
-  if (uploadError) {
-    console.error('Error subiendo archivo en upload route:', uploadError);
-    return NextResponse.json(
-      { ok: false, error: 'No se ha podido subir el archivo' } as ApiUploadResponse,
-      { status: 500 }
-    );
-  }
+    if (uploadError) {
+      console.error('❌ Error subiendo archivo a storage:', uploadError);
+      return NextResponse.json(
+        { ok: false, error: 'No se ha podido subir el archivo' },
+        { status: 500 }
+      );
+    }
 
-  // 2) URL pública
-  const { data: publicData } = supabaseAdmin
-    .storage
-    .from(STORAGE_BUCKET)
-    .getPublicUrl(path);
+    // 4) Conseguir URL pública
+    const { data: publicData } = supabase.storage
+      .from(STORAGE_BUCKET)
+      .getPublicUrl(filePath);
 
-  const publicUrl = publicData?.publicUrl ?? null;
-  const labelMensaje = `Documento subido: ${docId}`;
+    const publicUrl = publicData.publicUrl;
 
-  // 3) Registrar mensaje en expediente_mensajes
-  const { data, error } = await supabaseAdmin
-    .from('expediente_mensajes')
-    .insert({
-      caso_id: casoId,
-      remitente: 'cliente' as Remitente,
-      mensaje: labelMensaje,
-      attachment_name: originalName,
-      attachment_path: publicUrl,
-      storage_path: path,
-    })
-    .select(
+    // 5) Crear mensaje de chat (remitente = cliente) con adjunto
+    const textoMensaje = `Documento subido: ${docId}`;
+
+    const { data: mensaje, error: msgError } = await supabase
+      .from('expediente_mensajes')
+      .insert({
+        caso_id: caso.id,
+        remitente: 'cliente',
+        mensaje: textoMensaje,
+        attachment_name: safeName,
+        attachment_path: publicUrl,
+        storage_path: filePath,
+      })
+      .select(
+        `
+        id,
+        caso_id,
+        remitente,
+        mensaje,
+        attachment_name,
+        attachment_path,
+        storage_path,
+        created_at
       `
-      id,
-      caso_id,
-      remitente,
-      mensaje,
-      attachment_name,
-      attachment_path,
-      storage_path,
-      created_at
-    `
-    )
-    .single();
+      )
+      .single();
 
-  if (error) {
-    console.error('Error creando mensaje de archivo:', error);
+    if (msgError || !mensaje) {
+      console.error('❌ Error guardando mensaje de archivo:', msgError);
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            'El archivo se ha subido, pero no se ha podido registrar el mensaje.',
+        },
+        { status: 500 }
+      );
+    }
+
+    // 6) Marcar que el cliente tiene mensajes nuevos para que salte el aviso
+    await supabase
+      .from('casos')
+      .update({ cliente_tiene_mensajes_nuevos: true })
+      .eq('id', caso.id);
+
+    return NextResponse.json({ ok: true, mensaje }, { status: 201 });
+  } catch (e) {
+    console.error('❌ Excepción en upload seguimiento:', e);
     return NextResponse.json(
-      { ok: false, error: 'Archivo subido pero no registrado' } as ApiUploadResponse,
+      { ok: false, error: 'Error inesperado subiendo el archivo' },
       { status: 500 }
     );
   }
-
-  // 4) Aviso para tu panel
-  const { error: updError } = await supabaseAdmin
-    .from('casos')
-    .update({ cliente_tiene_mensajes_nuevos: true })
-    .eq('id', casoId);
-
-  if (updError) {
-    console.error('Error marcando cliente_tiene_mensajes_nuevos en upload:', updError);
-  }
-
-  return NextResponse.json(
-    { ok: true, mensaje: data } as ApiUploadResponse,
-    { status: 201 }
-  );
 }
