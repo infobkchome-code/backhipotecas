@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, ChangeEvent } from 'react';
 import { useParams } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient'; // 🔴 para subir archivos
 
 type SeguimientoCaso = {
   id: string;
@@ -24,8 +25,12 @@ type MensajeChat = {
   id: string;
   caso_id: string;
   remitente: 'gestor' | 'cliente';
-  mensaje: string;
+  mensaje: string | null;
   created_at: string;
+  // 🔴 adjuntos
+  attachment_name?: string | null;
+  attachment_path?: string | null;
+  storage_path?: string | null;
 };
 
 type ApiSeguimientoResponse = {
@@ -51,6 +56,9 @@ const ESTADO_LABEL: Record<string, string> = {
   denegado: 'Denegado',
 };
 
+// 🔴 NOMBRE DEL BUCKET DE STORAGE (CÁMBIALO SI EL TUYO ES OTRO)
+const STORAGE_BUCKET = 'expediente-archivos';
+
 export default function SeguimientoPage() {
   const params = useParams<{ token: string }>();
   const token = params?.token;
@@ -65,6 +73,10 @@ export default function SeguimientoPage() {
   const [nuevoMensaje, setNuevoMensaje] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+
+  // 🔴 subida de archivos
+  const [subiendo, setSubiendo] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // ---------------- CARGA DATOS CASO + LOGS ----------------
   useEffect(() => {
@@ -180,6 +192,74 @@ export default function SeguimientoPage() {
       setChatError('Ha ocurrido un error enviando tu mensaje.');
     } finally {
       setEnviando(false);
+    }
+  };
+
+  // 🔴 SUBIR ARCHIVO Y CREAR MENSAJE-TIPO-ADJUNTO
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !token) return;
+    if (!caso) {
+      setUploadError('No se ha encontrado el expediente.');
+      return;
+    }
+
+    setSubiendo(true);
+    setUploadError(null);
+
+    try {
+      const ext = file.name.split('.').pop();
+      const filePath = `${caso.id}/${Date.now()}-${Math.random()
+        .toString(36)
+        .slice(2)}.${ext ?? 'file'}`;
+
+      // 1) Subir a Supabase Storage
+      const { error: uploadErrorSupabase } = await supabase.storage
+        .from(STORAGE_BUCKET)
+        .upload(filePath, file);
+
+      if (uploadErrorSupabase) {
+        console.error('Error subiendo archivo del cliente:', uploadErrorSupabase);
+        setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
+        setSubiendo(false);
+        return;
+      }
+
+      // 2) Obtener URL pública para poder descargarlo luego
+      const { data: publicData } = supabase.storage
+        .from(STORAGE_BUCKET)
+        .getPublicUrl(filePath);
+
+      const publicUrl = publicData?.publicUrl ?? null;
+
+      // 3) Crear mensaje en el chat con los metadatos del adjunto
+      const res = await fetch(`/api/seguimiento/chat/${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mensaje: '', // opcional, solo adjunto
+          attachment_name: file.name,
+          attachment_path: publicUrl,
+          storage_path: filePath,
+        }),
+      });
+
+      const json: ApiChatResponse = await res.json();
+
+      if (!res.ok || !json.ok || !json.mensaje) {
+        console.error('Error guardando mensaje de archivo:', json.error);
+        setUploadError('El archivo se ha subido, pero no se ha registrado en el chat.');
+        setSubiendo(false);
+        return;
+      }
+
+      setMensajes((prev) => [...prev, json.mensaje]);
+      e.target.value = ''; // limpiar input file
+    } catch (err) {
+      console.error('Error inesperado subiendo archivo:', err);
+      setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
+    } finally {
+      setSubiendo(false);
     }
   };
 
@@ -300,8 +380,7 @@ export default function SeguimientoPage() {
             Chat con tu gestor
           </h2>
           <p className="text-xs text-emerald-200/80">
-            Envía mensajes directos a tu gestor sobre este expediente. Te
-            responderá desde su panel interno.
+            Envía mensajes directos a tu gestor sobre este expediente. También puedes adjuntar documentación.
           </p>
 
           <div className="max-h-64 overflow-y-auto space-y-2 pr-1 bg-slate-950/40 rounded-md p-2">
@@ -321,13 +400,28 @@ export default function SeguimientoPage() {
                   }`}
                 >
                   <div
-                    className={`max-w-[80%] rounded-lg px-3 py-2 text-xs ${
+                    className={`max-w-[80%] rounded-lg px-3 py-2 text-xs space-y-1 ${
                       esCliente
                         ? 'bg-emerald-600 text-slate-950'
                         : 'bg-slate-800 text-slate-100'
                     }`}
                   >
-                    <p>{m.mensaje}</p>
+                    {/* 🔴 adjunto si existe */}
+                    {m.attachment_name && m.attachment_path && (
+                      <a
+                        href={m.attachment_path}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 underline decoration-emerald-200 text-[11px]"
+                      >
+                        📎 {m.attachment_name}
+                      </a>
+                    )}
+
+                    {m.mensaje && m.mensaje.trim().length > 0 && (
+                      <p>{m.mensaje}</p>
+                    )}
+
                     <p className="mt-1 text-[10px] opacity-70">
                       {new Date(m.created_at).toLocaleString('es-ES')}
                     </p>
@@ -342,23 +436,48 @@ export default function SeguimientoPage() {
               {chatError}
             </div>
           )}
+          {uploadError && (
+            <div className="rounded-md border border-red-600 bg-red-950/60 px-3 py-2 text-[11px] text-red-100">
+              {uploadError}
+            </div>
+          )}
 
-          <div className="flex gap-2 pt-1">
-            <input
-              type="text"
-              value={nuevoMensaje}
-              onChange={(e) => setNuevoMensaje(e.target.value)}
-              placeholder="Escribe tu mensaje para tu gestor…"
-              className="flex-1 rounded-md bg-slate-950 border border-emerald-700 px-3 py-2 text-xs text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-            <button
-              type="button"
-              onClick={handleSendMessage}
-              disabled={!nuevoMensaje.trim() || enviando}
-              className="px-4 py-2 rounded-md bg-emerald-500 text-xs font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {enviando ? 'Enviando…' : 'Enviar'}
-            </button>
+          <div className="flex flex-col gap-2 pt-1">
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={nuevoMensaje}
+                onChange={(e) => setNuevoMensaje(e.target.value)}
+                placeholder="Escribe tu mensaje para tu gestor…"
+                className="flex-1 rounded-md bg-slate-950 border border-emerald-700 px-3 py-2 text-xs text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              />
+              <button
+                type="button"
+                onClick={handleSendMessage}
+                disabled={!nuevoMensaje.trim() || enviando}
+                className="px-4 py-2 rounded-md bg-emerald-500 text-xs font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {enviando ? 'Enviando…' : 'Enviar'}
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between gap-2">
+              <label className="inline-flex items-center gap-2 text-[11px] text-emerald-100 cursor-pointer">
+                <span className="px-2 py-1 rounded-md border border-emerald-600 bg-emerald-900/40">
+                  Adjuntar archivo…
+                </span>
+                <input
+                  type="file"
+                  className="hidden"
+                  onChange={handleFileChange}
+                />
+              </label>
+              {subiendo && (
+                <span className="text-[11px] text-emerald-200">
+                  Subiendo archivo…
+                </span>
+              )}
+            </div>
           </div>
         </section>
 
