@@ -97,7 +97,8 @@ export async function GET(
 
 /**
  * POST → enviar mensaje al chat
- * También pone cliente_tiene_mensajes_nuevos = TRUE si escribe el cliente
+ * Permite mensaje, adjunto o ambos.
+ * También pone cliente_tiene_mensajes_nuevos = TRUE si escribe el cliente.
  */
 export async function POST(
   req: Request,
@@ -137,9 +138,18 @@ export async function POST(
     );
   }
 
-  if (!mensaje || mensaje.trim().length === 0) {
+  const trimmedMensaje = mensaje?.trim() ?? '';
+  const hasMensaje = trimmedMensaje.length > 0;
+  const hasAdjunto =
+    !!attachment_name || !!attachment_path || !!storage_path;
+
+  // ⛔ Ahora solo damos error si NO hay ni mensaje ni adjunto
+  if (!hasMensaje && !hasAdjunto) {
     return NextResponse.json(
-      { ok: false, error: 'El mensaje no puede estar vacío' } as ApiPostResponse,
+      {
+        ok: false,
+        error: 'Debes enviar un mensaje o adjuntar un archivo',
+      } as ApiPostResponse,
       { status: 400 }
     );
   }
@@ -150,7 +160,7 @@ export async function POST(
     .insert({
       caso_id: casoId,
       remitente,
-      mensaje: mensaje.trim(),
+      mensaje: hasMensaje ? trimmedMensaje : null,
       attachment_name: attachment_name ?? null,
       attachment_path: attachment_path ?? null,
       storage_path: storage_path ?? null,
@@ -177,7 +187,7 @@ export async function POST(
     );
   }
 
-  // 2) Si el remitente es el cliente, marcar que hay mensajes nuevos
+  // 2) Si el remitente es el cliente, marcar que hay mensajes/documentos nuevos
   if (remitente === 'cliente') {
     const { error: updError } = await supabaseAdmin
       .from('casos')
@@ -193,7 +203,6 @@ export async function POST(
   }
 
   // 3) Si el remitente es el gestor, más adelante aquí haremos el envío de email al cliente
-  // (por ahora, lo dejamos pendiente como acordamos)
 
   return NextResponse.json({ ok: true, message: data } as ApiPostResponse);
 }
