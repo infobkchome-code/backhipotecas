@@ -4,7 +4,6 @@ import { createClient } from '@supabase/supabase-js';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-// Supabase con SERVICE ROLE (solo en el backend)
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -14,8 +13,8 @@ if (!supabaseUrl || !supabaseServiceKey) {
 
 const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
 
-// Nombre del bucket de storage
-const bucket = 'expediente_documentos';
+// 🔴 MUY IMPORTANTE → nombre EXACTO del bucket en Supabase Storage
+const STORAGE_BUCKET = 'expediente_documentos';
 
 export async function POST(
   req: NextRequest,
@@ -24,10 +23,10 @@ export async function POST(
   const token = params.token;
 
   try {
-    // 1) Buscar el caso por el seguimiento_token
+    // 1) Buscar el caso por seguimiento_token
     const { data: caso, error: casoError } = await supabase
       .from('casos')
-      .select('id, titulo, cliente_tiene_mensajes_nuevos')
+      .select('id, titulo')
       .eq('seguimiento_token', token)
       .single();
 
@@ -39,7 +38,7 @@ export async function POST(
       );
     }
 
-    // 2) Leer el form-data (file + docId)
+    // 2) Leer form-data
     const formData = await req.formData();
     const file = formData.get('file') as File | null;
     const docId = (formData.get('docId') as string | null) ?? 'documento';
@@ -51,11 +50,24 @@ export async function POST(
       );
     }
 
-    // 3) Subir al bucket
+    // etiqueta bonita para el mensaje
+    const docLabels: Record<string, string> = {
+      dni_comprador: 'DNI/NIE de comprador(es)',
+      dni_cliente: 'DNI/NIE del cliente',
+      nominas_3m: 'Nóminas de los últimos 3 meses',
+      contrato_trabajo: 'Contrato de trabajo',
+      vida_laboral: 'Informe de vida laboral',
+      renta: 'Declaración de la renta',
+      extractos_6m: 'Extractos bancarios últimos 6 meses',
+      extractos_3_6m: 'Extractos bancarios 3–6 meses',
+    };
+    const docLabel = docLabels[docId] ?? 'Documento';
+
     const ext = file.name.split('.').pop();
     const safeName = file.name.replace(/\s+/g, '_');
-    const filePath = `${caso.id}/${Date.now()}-${docId}.${ext ?? 'file'}`;
+    const filePath = `${caso.id}/${docId}/${Date.now()}-${safeName}`;
 
+    // 3) Subir al bucket
     const { error: uploadError } = await supabase.storage
       .from(STORAGE_BUCKET)
       .upload(filePath, file, {
@@ -71,15 +83,15 @@ export async function POST(
       );
     }
 
-    // 4) Conseguir URL pública
+    // 4) Obtener URL pública
     const { data: publicData } = supabase.storage
       .from(STORAGE_BUCKET)
       .getPublicUrl(filePath);
 
     const publicUrl = publicData.publicUrl;
 
-    // 5) Crear mensaje de chat (remitente = cliente) con adjunto
-    const textoMensaje = `Documento subido: ${docId}`;
+    // 5) Crear mensaje en expediente_mensajes (remitente = cliente)
+    const textoMensaje = `Documento subido: ${docLabel}`;
 
     const { data: mensaje, error: msgError } = await supabase
       .from('expediente_mensajes')
@@ -117,7 +129,7 @@ export async function POST(
       );
     }
 
-    // 6) Marcar que el cliente tiene mensajes nuevos para que salte el aviso
+    // 6) Marcar que el cliente tiene mensajes nuevos
     await supabase
       .from('casos')
       .update({ cliente_tiene_mensajes_nuevos: true })
