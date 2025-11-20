@@ -32,7 +32,7 @@ export async function GET(
 
   try {
     const { data, error } = await supabase
-      .from('caso_mensajes') // 👈 CAMBIA SI TU TABLA SE LLAMA DISTINTO
+      .from('expediente_mensajes') // 👈 CAMBIA SI TU TABLA SE LLAMA DISTINTO
       .select(
         `
         id,
