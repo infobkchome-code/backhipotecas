@@ -72,7 +72,6 @@ const DOC_ITEMS: DocItem[] = [
   { id: 'extractos_3_6m', titulo: 'Extractos bancarios 3–6 meses', obligatorio: false },
 ];
 
-// Etiqueta bonita para el mensaje de chat al subir archivo
 const DOC_LABELS: Record<string, string> = DOC_ITEMS.reduce(
   (acc, d) => ({ ...acc, [d.id]: d.titulo }),
   {} as Record<string, string>
@@ -96,6 +95,7 @@ export default function SeguimientoPage() {
   // SUBIDA DE DOCUMENTOS
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadOk, setUploadOk] = useState<string | null>(null);
 
   // ---------------- CARGA DATOS CASO + LOGS ----------------
   useEffect(() => {
@@ -214,7 +214,7 @@ export default function SeguimientoPage() {
     }
   };
 
-  // -------- SUBIR DOCUMENTO DIRECTO AL BUCKET + MENSAJE DE CHAT --------
+  // -------- SUBIR DOCUMENTO AL BUCKET + MENSAJE DE CHAT --------
   const handleDocFileChange =
     (docId: string) => async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -222,6 +222,7 @@ export default function SeguimientoPage() {
 
       setUploadingDocId(docId);
       setUploadError(null);
+      setUploadOk(null);
 
       try {
         // 1) Nombre "limpio"
@@ -231,12 +232,12 @@ export default function SeguimientoPage() {
           .replace(/[^a-zA-Z0-9._-]/g, '_')
           .replace(/_+/g, '_');
 
-        // 2) Ruta en el bucket (mismo esquema que panel interno si quieres)
+        // 2) Ruta en el bucket (igual esquema que en panel interno)
         const storagePath = `${caso.id}/${docId}/${Date.now()}-${safeName}`;
 
-        // 3) ⬅️ AQUÍ EL CAMBIO IMPORTANTE: bucket correcto = 'docs'
+        // 3) Subir al bucket expediente_documentos
         const { error: uploadError } = await supabase.storage
-          .from('docs')
+          .from('expediente_documentos')
           .upload(storagePath, file, { upsert: true });
 
         if (uploadError) {
@@ -247,14 +248,14 @@ export default function SeguimientoPage() {
           return;
         }
 
-        // 4) Obtener URL pública del archivo
+        // 4) URL pública
         const { data: publicData } = supabase.storage
-          .from('docs')
+          .from('expediente_documentos')
           .getPublicUrl(storagePath);
 
         const publicUrl = publicData?.publicUrl ?? null;
 
-        // 5) Registrar un mensaje en el chat (API seguimiento/chat)
+        // 5) Registrar un mensaje en el chat (se verá en tu panel también)
         const label = DOC_LABELS[docId] ?? 'Documento';
         const mensajeTexto = `Documento subido: ${label}`;
 
@@ -266,6 +267,7 @@ export default function SeguimientoPage() {
             attachment_name: safeName,
             attachment_path: publicUrl,
             storage_path: storagePath,
+            docId, // por si luego queremos sincronizar checklist en el backend
           }),
         });
 
@@ -281,7 +283,13 @@ export default function SeguimientoPage() {
           return;
         }
 
+        // Añadir mensaje al chat del cliente
         setMensajes((prev) => [...prev, json.mensaje]);
+
+        // Feedback claro al cliente
+        setUploadOk(`Se ha subido correctamente: "${label}".`);
+        setTimeout(() => setUploadOk(null), 4000);
+
         e.target.value = '';
       } catch (err) {
         console.error('Error inesperado subiendo archivo cliente:', err);
@@ -391,6 +399,12 @@ export default function SeguimientoPage() {
             </div>
           )}
 
+          {uploadOk && (
+            <div className="rounded-md border border-emerald-600 bg-emerald-950/40 px-3 py-2 text-[11px] text-emerald-100">
+              {uploadOk}
+            </div>
+          )}
+
           <div className="divide-y divide-slate-800 rounded-md border border-slate-800 bg-slate-950/40">
             {DOC_ITEMS.map((doc) => (
               <div
@@ -398,8 +412,7 @@ export default function SeguimientoPage() {
                 className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-3"
               >
                 <div className="flex-1">
-                  <div className="flex items
-                  center gap-2">
+                  <div className="flex items-center gap-2">
                     <p className="text-xs font-medium text-slate-100">
                       {doc.titulo}
                     </p>
@@ -436,7 +449,7 @@ export default function SeguimientoPage() {
           </div>
         </section>
 
-        {/* TIMELINE VISIBLE PARA CLIENTE */}
+        {/* TIMELINE */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
           <h2 className="text-sm font-semibold text-slate-200">
             Historial de tu expediente
@@ -472,7 +485,7 @@ export default function SeguimientoPage() {
           )}
         </section>
 
-        {/* CHAT CON TU GESTOR */}
+        {/* CHAT CLIENTE */}
         <section className="rounded-lg border border-emerald-700 bg-emerald-950/30 p-4 space-y-3">
           <h2 className="text-sm font-semibold text-emerald-100">
             Chat con tu gestor
