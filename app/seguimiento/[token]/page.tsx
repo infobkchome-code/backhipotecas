@@ -94,8 +94,9 @@ export default function SeguimientoPage() {
   const [chatError, setChatError] = useState<string | null>(null);
 
   // SUBIDA DE DOCUMENTOS
-  const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
+   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadOk, setUploadOk] = useState<string | null>(null);
 
   // ---------------- CARGA DATOS CASO + LOGS ----------------
   useEffect(() => {
