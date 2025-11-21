@@ -138,7 +138,7 @@ export default function ChatPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          remitente: 'gestor', // 👈 aquí puedes poner 'cliente' en el portal de cliente
+          remitente: 'gestor', // 👈 gestor enviando desde el panel interno
           mensaje: trimmed,
         }),
       });
@@ -225,15 +225,29 @@ export default function ChatPage() {
                 </div>
               )}
               <div
-                className={`max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm ${
+                className={`max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm space-y-1 ${
                   isGestor
                     ? 'bg-emerald-600 text-white rounded-br-none'
                     : 'bg-slate-800 text-slate-50 rounded-bl-none'
                 }`}
               >
+                {/* 📎 Si el mensaje tiene un archivo adjunto, mostrarlo arriba */}
+                {msg.attachment_name && msg.attachment_path && (
+                  <a
+                    href={msg.attachment_path}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 underline text-[11px]"
+                  >
+                    📎 {msg.attachment_name}
+                  </a>
+                )}
+
+                {/* Texto del mensaje */}
                 {msg.mensaje && (
                   <div className="whitespace-pre-wrap">{msg.mensaje}</div>
                 )}
+
                 <div className="mt-1 text-[10px] opacity-70 text-right">
                   {new Date(msg.created_at).toLocaleString()}
                 </div>
