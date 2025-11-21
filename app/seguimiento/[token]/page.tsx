@@ -72,7 +72,7 @@ const DOC_ITEMS: DocItem[] = [
   { id: 'extractos_3_6m', titulo: 'Extractos bancarios 3–6 meses', obligatorio: false },
 ];
 
-// Etiqueta bonita para el mensaje de chat al subir archivo
+// Etiquetas humanas para el mensaje de chat al subir archivo
 const DOC_LABELS: Record<string, string> = DOC_ITEMS.reduce(
   (acc, d) => ({ ...acc, [d.id]: d.titulo }),
   {} as Record<string, string>
@@ -214,7 +214,7 @@ export default function SeguimientoPage() {
     }
   };
 
-  // -------- SUBIR DOCUMENTO DIRECTO AL BUCKET + MENSAJE DE CHAT --------
+  // -------- SUBIR DOCUMENTO AL BUCKET + MENSAJE DE CHAT --------
   const handleDocFileChange =
     (docId: string) => async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -254,7 +254,7 @@ export default function SeguimientoPage() {
 
         const publicUrl = publicData?.publicUrl ?? null;
 
-        // 5) Registrar un mensaje en el chat (API seguimiento/chat)
+        // 5) Registrar un mensaje en el chat
         const label = DOC_LABELS[docId] ?? 'Documento';
         const mensajeTexto = `Documento subido: ${label}`;
 
