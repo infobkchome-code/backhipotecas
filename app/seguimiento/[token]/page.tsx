@@ -214,7 +214,7 @@ export default function SeguimientoPage() {
     }
   };
 
-  // -------- SUBIR DOCUMENTO AL BUCKET expediente_documentos + MENSAJE DE CHAT --------
+  // -------- SUBIR DOCUMENTO DIRECTO AL BUCKET + MENSAJE DE CHAT --------
   const handleDocFileChange =
     (docId: string) => async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -231,10 +231,10 @@ export default function SeguimientoPage() {
           .replace(/[^a-zA-Z0-9._-]/g, '_')
           .replace(/_+/g, '_');
 
-        // 2) Ruta en el bucket (igual filosofía que en el panel interno)
+        // 2) Ruta en el bucket (mismo esquema que panel interno)
         const storagePath = `${caso.id}/${docId}/${Date.now()}-${safeName}`;
 
-        // 3) Subir al bucket expediente_documentos usando el cliente del navegador
+        // 3) Subir a bucket expediente_documentos
         const { error: uploadError } = await supabase.storage
           .from('expediente_documentos')
           .upload(storagePath, file, { upsert: true });
@@ -372,7 +372,7 @@ export default function SeguimientoPage() {
           )}
         </section>
 
-        {/* DOCUMENTACIÓN PARA EL ESTUDIO (VISTA LISTA) */}
+        {/* DOCUMENTACIÓN PARA EL ESTUDIO (LISTA) */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div>
