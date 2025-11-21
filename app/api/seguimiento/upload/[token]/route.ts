@@ -13,8 +13,8 @@ if (!supabaseUrl || !supabaseServiceKey) {
 
 const supabase = createClient(supabaseUrl!, supabaseServiceKey!);
 
-// ⬅️ NOMBRE EXACTO DEL BUCKET EN SUPABASE STORAGE
-const STORAGE_BUCKET = 'expediente_documentos';
+// ⬅️ ESTE ES EL MISMO BUCKET QUE USA EL PORTAL
+const STORAGE_BUCKET = 'docs';
 
 export async function POST(
   req: NextRequest,
@@ -66,7 +66,7 @@ export async function POST(
     const safeName = file.name.replace(/\s+/g, '_');
     const filePath = `${caso.id}/${docId}/${Date.now()}-${safeName}`;
 
-    // 3) Subir al bucket
+    // 3) Subir al bucket CORRECTO
     const { error: uploadError } = await supabase.storage
       .from(STORAGE_BUCKET)
       .upload(filePath, file, {
@@ -76,7 +76,6 @@ export async function POST(
 
     if (uploadError) {
       console.error('❌ Error subiendo archivo a storage:', uploadError);
-      // 🔴 ahora devolvemos el mensaje real de Supabase
       return NextResponse.json(
         {
           ok: false,
