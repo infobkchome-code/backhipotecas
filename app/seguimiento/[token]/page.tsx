@@ -2,8 +2,7 @@
 
 import { useEffect, useState, ChangeEvent } from 'react';
 import { useParams } from 'next/navigation';
-// 👇 Import de supabase eliminado: ya no lo usamos directamente en el cliente
-// import { supabase } from '@/lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 type SeguimientoCaso = {
   id: string;
@@ -73,6 +72,7 @@ const DOC_ITEMS: DocItem[] = [
   { id: 'extractos_3_6m', titulo: 'Extractos bancarios 3–6 meses', obligatorio: false },
 ];
 
+// Etiqueta bonita para el mensaje de chat al subir archivo
 const DOC_LABELS: Record<string, string> = DOC_ITEMS.reduce(
   (acc, d) => ({ ...acc, [d.id]: d.titulo }),
   {} as Record<string, string>
@@ -214,7 +214,7 @@ export default function SeguimientoPage() {
     }
   };
 
-  // -------- SUBIR DOCUMENTO USANDO EL ENDPOINT DEL SERVIDOR --------
+  // -------- SUBIR DOCUMENTO DIRECTO AL BUCKET + MENSAJE DE CHAT --------
   const handleDocFileChange =
     (docId: string) => async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -224,26 +224,63 @@ export default function SeguimientoPage() {
       setUploadError(null);
 
       try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('docId', docId);
+        // 1) Nombre "limpio"
+        let safeName = file.name
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-zA-Z0-9._-]/g, '_')
+          .replace(/_+/g, '_');
 
-        const res = await fetch(`/api/seguimiento/upload/${token}`, {
-          method: 'POST',
-          body: formData,
-        });
+        // 2) Ruta en el bucket (mismo esquema que panel interno si quieres)
+        const storagePath = `${caso.id}/${docId}/${Date.now()}-${safeName}`;
 
-        const json: ApiChatResponse = await res.json();
+        // 3) ⬅️ AQUÍ EL CAMBIO IMPORTANTE: bucket correcto = 'docs'
+        const { error: uploadError } = await supabase.storage
+          .from('docs')
+          .upload(storagePath, file, { upsert: true });
 
-        if (!res.ok || !json.ok || !json.mensaje) {
-          console.error('Error subiendo archivo cliente:', json.error);
+        if (uploadError) {
+          console.error('Error subiendo archivo cliente:', uploadError);
           setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
           setUploadingDocId(null);
           e.target.value = '';
           return;
         }
 
-        // Añadimos el mensaje (con el adjunto) al chat del cliente
+        // 4) Obtener URL pública del archivo
+        const { data: publicData } = supabase.storage
+          .from('docs')
+          .getPublicUrl(storagePath);
+
+        const publicUrl = publicData?.publicUrl ?? null;
+
+        // 5) Registrar un mensaje en el chat (API seguimiento/chat)
+        const label = DOC_LABELS[docId] ?? 'Documento';
+        const mensajeTexto = `Documento subido: ${label}`;
+
+        const res = await fetch(`/api/seguimiento/chat/${token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mensaje: mensajeTexto,
+            attachment_name: safeName,
+            attachment_path: publicUrl,
+            storage_path: storagePath,
+          }),
+        });
+
+        const json: ApiChatResponse = await res.json();
+
+        if (!res.ok || !json.ok || !json.mensaje) {
+          console.error('Error guardando mensaje de archivo:', json.error);
+          setUploadError(
+            'El archivo se ha subido, pero no se ha registrado correctamente.'
+          );
+          setUploadingDocId(null);
+          e.target.value = '';
+          return;
+        }
+
         setMensajes((prev) => [...prev, json.mensaje]);
         e.target.value = '';
       } catch (err) {
@@ -361,7 +398,8 @@ export default function SeguimientoPage() {
                 className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-3"
               >
                 <div className="flex-1">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items
+                  center gap-2">
                     <p className="text-xs font-medium text-slate-100">
                       {doc.titulo}
                     </p>
