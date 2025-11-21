@@ -1,11 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('❌ Faltan variables de entorno Supabase en /api/seguimiento/chat');
+  console.error(
+    '❌ Faltan variables de entorno Supabase en /api/seguimiento/chat'
+  );
 }
 
 const supabaseAdmin = createClient(supabaseUrl!, supabaseServiceKey!);
@@ -17,26 +22,23 @@ type MensajeRow = {
   caso_id: string;
   remitente: Remitente;
   mensaje: string | null;
+  attachment_name: string | null;
+  attachment_path: string | null;
+  storage_path: string | null;
   created_at: string;
-  attachment_name?: string | null;
-  attachment_path?: string | null;
-  storage_path?: string | null;
 };
 
-type ApiChatList = {
+type ApiChatGet = {
   ok: boolean;
-  mensajes?: MensajeRow[];
-  error?: string;
+  mensajes: MensajeRow[];
 };
 
 type ApiChatPost = {
   ok: boolean;
-  mensaje?: MensajeRow;
-  error?: string;
+  mensaje: MensajeRow;
 };
 
-// 🔎 helper: localizar el caso por el seguimiento_token
-async function getCasoIdFromToken(token: string): Promise<string | null> {
+async function getCasoIdByToken(token: string): Promise<string | null> {
   const { data, error } = await supabaseAdmin
     .from('casos')
     .select('id')
@@ -44,31 +46,31 @@ async function getCasoIdFromToken(token: string): Promise<string | null> {
     .single();
 
   if (error || !data) {
-    console.error('Error buscando caso por token de seguimiento:', error);
+    console.error('Error buscando caso por token en seguimiento/chat:', error);
     return null;
   }
 
   return data.id as string;
 }
 
-// GET: mensajes del chat para este token (cliente)
+// GET → mensajes del chat del cliente (por token de seguimiento)
 export async function GET(
-  _req: Request,
+  _req: NextRequest,
   { params }: { params: { token: string } }
 ) {
   const token = params.token;
 
   if (!token) {
     return NextResponse.json(
-      { ok: false, error: 'Falta token' } as ApiChatList,
+      { ok: false, error: 'Falta el token en la URL' },
       { status: 400 }
     );
   }
 
-  const casoId = await getCasoIdFromToken(token);
+  const casoId = await getCasoIdByToken(token);
   if (!casoId) {
     return NextResponse.json(
-      { ok: false, error: 'not_found' } as ApiChatList,
+      { ok: false, error: 'Expediente no encontrado para este enlace' },
       { status: 404 }
     );
   }
@@ -93,73 +95,53 @@ export async function GET(
   if (error) {
     console.error('Error GET seguimiento chat:', error);
     return NextResponse.json(
-      { ok: false, error: 'No se pudo cargar el chat' } as ApiChatList,
+      { ok: false, error: 'No se pudieron cargar los mensajes' },
       { status: 500 }
     );
   }
 
   return NextResponse.json(
-    { ok: true, mensajes: data ?? [] } as ApiChatList,
+    { ok: true, mensajes: (data ?? []) as MensajeRow[] } as ApiChatGet,
     { status: 200 }
   );
 }
 
-// POST: mensaje del cliente (texto, adjunto o ambos)
+// POST → mensaje nuevo del CLIENTE (texto y/o adjunto)
 export async function POST(
-  req: Request,
+  req: NextRequest,
   { params }: { params: { token: string } }
 ) {
   const token = params.token;
 
   if (!token) {
     return NextResponse.json(
-      { ok: false, error: 'Falta token' } as ApiChatPost,
+      { ok: false, error: 'Falta el token en la URL' },
       { status: 400 }
     );
   }
 
-  const casoId = await getCasoIdFromToken(token);
+  const casoId = await getCasoIdByToken(token);
   if (!casoId) {
     return NextResponse.json(
-      { ok: false, error: 'not_found' } as ApiChatPost,
+      { ok: false, error: 'Expediente no encontrado para este enlace' },
       { status: 404 }
     );
   }
 
-  let body: any = {};
-  try {
-    body = await req.json();
-  } catch (e) {
-    console.error('Error parseando body seguimiento chat:', e);
-    return NextResponse.json(
-      { ok: false, error: 'Cuerpo inválido' } as ApiChatPost,
-      { status: 400 }
-    );
-  }
+  const body = await req.json().catch(() => ({} as any));
+  const remitente: Remitente = 'cliente';
 
-  const {
-    mensaje,
-    attachment_name,
-    attachment_path,
-    storage_path,
-  } = body as {
-    mensaje?: string;
-    attachment_name?: string | null;
-    attachment_path?: string | null;
-    storage_path?: string | null;
-  };
+  const mensaje: string | undefined = body?.mensaje;
+  const attachment_name: string | undefined = body?.attachment_name;
+  const attachment_path: string | undefined = body?.attachment_path;
+  const storage_path: string | undefined = body?.storage_path;
 
-  const trimmedMensaje = mensaje?.toString().trim() ?? '';
-  const hasMensaje = trimmedMensaje.length > 0;
-  const hasAdjunto =
-    !!attachment_name || !!attachment_path || !!storage_path;
-
-  if (!hasMensaje && !hasAdjunto) {
+  if (!mensaje && !attachment_name) {
     return NextResponse.json(
       {
         ok: false,
-        error: 'Debes enviar un mensaje o adjuntar un archivo',
-      } as ApiChatPost,
+        error: 'El mensaje no puede estar vacío (texto o archivo requerido)',
+      },
       { status: 400 }
     );
   }
@@ -168,8 +150,8 @@ export async function POST(
     .from('expediente_mensajes')
     .insert({
       caso_id: casoId,
-      remitente: 'cliente' as Remitente,
-      mensaje: hasMensaje ? trimmedMensaje : null,
+      remitente,
+      mensaje: mensaje ?? null,
       attachment_name: attachment_name ?? null,
       attachment_path: attachment_path ?? null,
       storage_path: storage_path ?? null,
@@ -188,15 +170,15 @@ export async function POST(
     )
     .single();
 
-  if (error) {
+  if (error || !data) {
     console.error('Error POST seguimiento chat:', error);
     return NextResponse.json(
-      { ok: false, error: 'No se pudo guardar el mensaje' } as ApiChatPost,
+      { ok: false, error: 'No se pudo guardar el mensaje' },
       { status: 500 }
     );
   }
 
-  // Marcar en CASOS que hay mensajes nuevos del cliente
+  // Marcar en el caso que hay mensajes nuevos del cliente
   const { error: updError } = await supabaseAdmin
     .from('casos')
     .update({ cliente_tiene_mensajes_nuevos: true })
@@ -210,7 +192,7 @@ export async function POST(
   }
 
   return NextResponse.json(
-    { ok: true, mensaje: data } as ApiChatPost,
+    { ok: true, mensaje: data as MensajeRow } as ApiChatPost,
     { status: 201 }
   );
 }
