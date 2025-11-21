@@ -72,7 +72,7 @@ const DOC_ITEMS: DocItem[] = [
   { id: 'extractos_3_6m', titulo: 'Extractos bancarios 3–6 meses', obligatorio: false },
 ];
 
-// etiqueta bonita para el mensaje al subir archivo
+// Etiqueta bonita para el mensaje de chat al subir archivo
 const DOC_LABELS: Record<string, string> = DOC_ITEMS.reduce(
   (acc, d) => ({ ...acc, [d.id]: d.titulo }),
   {} as Record<string, string>
@@ -87,17 +87,17 @@ export default function SeguimientoPage() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // chat
+  // CHAT
   const [mensajes, setMensajes] = useState<MensajeChat[]>([]);
   const [nuevoMensaje, setNuevoMensaje] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
 
-  // subida docs
+  // SUBIDA DE DOCUMENTOS
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  // ---------- cargar caso + logs ----------
+  // ---------------- CARGA DATOS CASO + LOGS ----------------
   useEffect(() => {
     const loadData = async () => {
       if (!token) return;
@@ -127,7 +127,9 @@ export default function SeguimientoPage() {
         }
 
         if (!json.data) {
-          setErrorMsg('No hemos encontrado ningún expediente asociado a este enlace.');
+          setErrorMsg(
+            'No hemos encontrado ningún expediente asociado a este enlace.'
+          );
           setLoading(false);
           return;
         }
@@ -145,7 +147,7 @@ export default function SeguimientoPage() {
     loadData();
   }, [token]);
 
-  // ---------- cargar chat ----------
+  // ---------------- CARGA CHAT (cliente) ----------------
   const loadChat = async () => {
     if (!token) return;
     try {
@@ -170,12 +172,16 @@ export default function SeguimientoPage() {
 
   useEffect(() => {
     loadChat();
-    const interval = setInterval(loadChat, 10000);
+
+    const interval = setInterval(() => {
+      loadChat();
+    }, 10000);
+
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // ---------- enviar mensaje texto ----------
+  // -------- ENVIAR MENSAJE DE TEXTO --------
   const handleSendMessage = async () => {
     if (!nuevoMensaje.trim() || !token) return;
 
@@ -208,7 +214,7 @@ export default function SeguimientoPage() {
     }
   };
 
-  // ---------- subir documento al bucket + mensaje de chat ----------
+  // -------- SUBIR DOCUMENTO DIRECTO AL BUCKET + MENSAJE DE CHAT --------
   const handleDocFileChange =
     (docId: string) => async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -218,17 +224,17 @@ export default function SeguimientoPage() {
       setUploadError(null);
 
       try {
-        // 1) nombre "limpio"
+        // 1) Nombre "limpio"
         let safeName = file.name
           .normalize('NFD')
           .replace(/[\u0300-\u036f]/g, '')
           .replace(/[^a-zA-Z0-9._-]/g, '_')
           .replace(/_+/g, '_');
 
-        // 2) ruta dentro del bucket
+        // 2) Ruta en el bucket
         const storagePath = `${caso.id}/${docId}/${Date.now()}-${safeName}`;
 
-        // 3) subir al bucket CORRECTO: expediente_documentos
+        // 3) Subir al bucket **expediente_documentos**
         const { error: uploadError } = await supabase.storage
           .from('expediente_documentos')
           .upload(storagePath, file, { upsert: true });
@@ -241,14 +247,14 @@ export default function SeguimientoPage() {
           return;
         }
 
-        // 4) url pública
+        // 4) Obtener URL pública
         const { data: publicData } = supabase.storage
           .from('expediente_documentos')
           .getPublicUrl(storagePath);
 
         const publicUrl = publicData?.publicUrl ?? null;
 
-        // 5) registrar mensaje en el chat
+        // 5) Registrar mensaje en el chat
         const label = DOC_LABELS[docId] ?? 'Documento';
         const mensajeTexto = `Documento subido: ${label}`;
 
@@ -285,7 +291,7 @@ export default function SeguimientoPage() {
       }
     };
 
-  // ---------- render ----------
+  // ---------------- RENDER ----------------
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
@@ -366,7 +372,7 @@ export default function SeguimientoPage() {
           )}
         </section>
 
-        {/* DOCUMENTACIÓN (LISTA PROFESIONAL) */}
+        {/* DOCUMENTACIÓN PARA EL ESTUDIO */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -472,7 +478,8 @@ export default function SeguimientoPage() {
           </h2>
           <p className="text-xs text-emerald-200/80">
             Envía mensajes directos a tu gestor sobre este expediente. La
-            documentación que subas también aparecerá aquí como archivos adjuntos.
+            documentación que subas también aparecerá aquí como archivos
+            adjuntos.
           </p>
 
           <div className="max-h-64 overflow-y-auto space-y-2 pr-1 bg-slate-950/40 rounded-md p-2">
