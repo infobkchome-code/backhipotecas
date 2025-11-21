@@ -2,6 +2,7 @@
 
 import { useEffect, useState, ChangeEvent } from 'react';
 import { useParams } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
 
 type SeguimientoCaso = {
   id: string;
@@ -71,7 +72,7 @@ const DOC_ITEMS: DocItem[] = [
   { id: 'extractos_3_6m', titulo: 'Extractos bancarios 3–6 meses', obligatorio: false },
 ];
 
-// Etiqueta bonita para el mensaje de confirmación
+// etiqueta bonita para el mensaje al subir archivo
 const DOC_LABELS: Record<string, string> = DOC_ITEMS.reduce(
   (acc, d) => ({ ...acc, [d.id]: d.titulo }),
   {} as Record<string, string>
@@ -86,18 +87,17 @@ export default function SeguimientoPage() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // CHAT
+  // chat
   const [mensajes, setMensajes] = useState<MensajeChat[]>([]);
   const [nuevoMensaje, setNuevoMensaje] = useState('');
   const [enviando, setEnviando] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
 
-  // SUBIDA DE DOCUMENTOS
+  // subida docs
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
-  const [uploadOk, setUploadOk] = useState<string | null>(null);
 
-  // ---------------- CARGA DATOS CASO + LOGS ----------------
+  // ---------- cargar caso + logs ----------
   useEffect(() => {
     const loadData = async () => {
       if (!token) return;
@@ -127,9 +127,7 @@ export default function SeguimientoPage() {
         }
 
         if (!json.data) {
-          setErrorMsg(
-            'No hemos encontrado ningún expediente asociado a este enlace.'
-          );
+          setErrorMsg('No hemos encontrado ningún expediente asociado a este enlace.');
           setLoading(false);
           return;
         }
@@ -147,7 +145,7 @@ export default function SeguimientoPage() {
     loadData();
   }, [token]);
 
-  // ---------------- CARGA CHAT (cliente) ----------------
+  // ---------- cargar chat ----------
   const loadChat = async () => {
     if (!token) return;
     try {
@@ -172,16 +170,12 @@ export default function SeguimientoPage() {
 
   useEffect(() => {
     loadChat();
-
-    const interval = setInterval(() => {
-      loadChat();
-    }, 10000);
-
+    const interval = setInterval(loadChat, 10000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // -------- ENVIAR MENSAJE DE TEXTO --------
+  // ---------- enviar mensaje texto ----------
   const handleSendMessage = async () => {
     if (!nuevoMensaje.trim() || !token) return;
 
@@ -214,7 +208,7 @@ export default function SeguimientoPage() {
     }
   };
 
-  // -------- SUBIR DOCUMENTO → API /api/seguimiento/upload/[token] --------
+  // ---------- subir documento al bucket + mensaje de chat ----------
   const handleDocFileChange =
     (docId: string) => async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -222,34 +216,66 @@ export default function SeguimientoPage() {
 
       setUploadingDocId(docId);
       setUploadError(null);
-      setUploadOk(null);
 
       try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('docId', docId);
+        // 1) nombre "limpio"
+        let safeName = file.name
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-zA-Z0-9._-]/g, '_')
+          .replace(/_+/g, '_');
 
-        const res = await fetch(`/api/seguimiento/upload/${token}`, {
-          method: 'POST',
-          body: formData,
-        });
+        // 2) ruta dentro del bucket
+        const storagePath = `${caso.id}/${docId}/${Date.now()}-${safeName}`;
 
-        const json: ApiChatResponse = await res.json();
+        // 3) subir al bucket CORRECTO: expediente_documentos
+        const { error: uploadError } = await supabase.storage
+          .from('expediente_documentos')
+          .upload(storagePath, file, { upsert: true });
 
-        if (!res.ok || !json.ok || !json.mensaje) {
-          console.error('Error en upload cliente:', json.error);
+        if (uploadError) {
+          console.error('Error subiendo archivo cliente:', uploadError);
           setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
           setUploadingDocId(null);
           e.target.value = '';
           return;
         }
 
-        // añadir mensaje al chat
-        setMensajes((prev) => [...prev, json.mensaje]);
+        // 4) url pública
+        const { data: publicData } = supabase.storage
+          .from('expediente_documentos')
+          .getPublicUrl(storagePath);
 
+        const publicUrl = publicData?.publicUrl ?? null;
+
+        // 5) registrar mensaje en el chat
         const label = DOC_LABELS[docId] ?? 'Documento';
-        setUploadOk(`Archivo subido correctamente: ${label}.`);
+        const mensajeTexto = `Documento subido: ${label}`;
 
+        const res = await fetch(`/api/seguimiento/chat/${token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mensaje: mensajeTexto,
+            attachment_name: safeName,
+            attachment_path: publicUrl,
+            storage_path: storagePath,
+          }),
+        });
+
+        const json: ApiChatResponse = await res.json();
+
+        if (!res.ok || !json.ok || !json.mensaje) {
+          console.error('Error guardando mensaje de archivo:', json.error);
+          setUploadError(
+            'El archivo se ha subido, pero no se ha registrado correctamente.'
+          );
+          setUploadingDocId(null);
+          e.target.value = '';
+          return;
+        }
+
+        setMensajes((prev) => [...prev, json.mensaje]);
         e.target.value = '';
       } catch (err) {
         console.error('Error inesperado subiendo archivo cliente:', err);
@@ -259,7 +285,7 @@ export default function SeguimientoPage() {
       }
     };
 
-  // ---------------- RENDER ----------------
+  // ---------- render ----------
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
@@ -340,7 +366,7 @@ export default function SeguimientoPage() {
           )}
         </section>
 
-        {/* DOCUMENTACIÓN PARA EL ESTUDIO (LISTA) */}
+        {/* DOCUMENTACIÓN (LISTA PROFESIONAL) */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -356,12 +382,6 @@ export default function SeguimientoPage() {
           {uploadError && (
             <div className="rounded-md border border-red-600 bg-red-950/60 px-3 py-2 text-[11px] text-red-100">
               {uploadError}
-            </div>
-          )}
-
-          {uploadOk && (
-            <div className="rounded-md border border-emerald-600 bg-emerald-950/60 px-3 py-2 text-[11px] text-emerald-100">
-              {uploadOk}
             </div>
           )}
 
@@ -409,7 +429,7 @@ export default function SeguimientoPage() {
           </div>
         </section>
 
-        {/* TIMELINE VISIBLE PARA CLIENTE */}
+        {/* HISTORIAL */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
           <h2 className="text-sm font-semibold text-slate-200">
             Historial de tu expediente
@@ -445,15 +465,14 @@ export default function SeguimientoPage() {
           )}
         </section>
 
-        {/* CHAT CON TU GESTOR */}
+        {/* CHAT */}
         <section className="rounded-lg border border-emerald-700 bg-emerald-950/30 p-4 space-y-3">
           <h2 className="text-sm font-semibold text-emerald-100">
             Chat con tu gestor
           </h2>
           <p className="text-xs text-emerald-200/80">
             Envía mensajes directos a tu gestor sobre este expediente. La
-            documentación que subas también aparecerá aquí como archivos
-            adjuntos.
+            documentación que subas también aparecerá aquí como archivos adjuntos.
           </p>
 
           <div className="max-h-64 overflow-y-auto space-y-2 pr-1 bg-slate-950/40 rounded-md p-2">
