@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useRef, FormEvent, ChangeEvent } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient'; // 👈 cliente del navegador
+import { supabase } from '@/lib/supabaseClient';
 
 type ChatMessage = {
   id: string;
@@ -37,7 +37,7 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [inputValue, setInputValue] = useState('');
-  const [casoTitulo, setCasoTitulo] = useState<string>(''); // 👈 nombre/título del expediente
+  const [casoTitulo, setCasoTitulo] = useState<string>('');
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
   const scrollToBottom = () => {
@@ -55,7 +55,7 @@ export default function ChatPage() {
       setError(null);
 
       try {
-        // 1.1 Cargar datos del expediente (para mostrar el título/nombre)
+        // 1.1 Título del caso
         const { data: casoData, error: casoError } = await supabase
           .from('casos')
           .select('id, titulo')
@@ -66,7 +66,7 @@ export default function ChatPage() {
           setCasoTitulo(casoData.titulo ?? '');
         }
 
-        // 1.2 Cargar mensajes del chat
+        // 1.2 Mensajes del chat
         const res = await fetch(`/api/portal/chat/${casoId}`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
@@ -93,7 +93,7 @@ export default function ChatPage() {
     fetchAll();
   }, [casoId]);
 
-  // 2) Suscripción Realtime: escuchar mensajes nuevos de este expediente
+  // 2) Realtime: nuevos mensajes
   useEffect(() => {
     if (!casoId) return;
 
@@ -123,7 +123,7 @@ export default function ChatPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [casoId]);
 
-  // Enviar mensaje nuevo
+  // 3) Enviar mensaje nuevo (texto)
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -138,7 +138,7 @@ export default function ChatPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          remitente: 'gestor', // 👈 gestor enviando desde el panel interno
+          remitente: 'gestor',
           mensaje: trimmed,
         }),
       });
@@ -151,7 +151,6 @@ export default function ChatPage() {
         return;
       }
 
-      // Lo añadimos para que se vea instantáneo aunque Realtime tarde un poco
       setMessages((prev) => [...prev, data.message]);
       setInputValue('');
       setTimeout(scrollToBottom, 100);
@@ -224,6 +223,7 @@ export default function ChatPage() {
                   {inicial}
                 </div>
               )}
+
               <div
                 className={`max-w-[70%] rounded-2xl px-3 py-2 text-sm shadow-sm space-y-1 ${
                   isGestor
@@ -231,27 +231,28 @@ export default function ChatPage() {
                     : 'bg-slate-800 text-slate-50 rounded-bl-none'
                 }`}
               >
-                {/* 📎 Si el mensaje tiene un archivo adjunto, mostrarlo arriba */}
+                {/* Adjuntos */}
                 {msg.attachment_name && msg.attachment_path && (
                   <a
                     href={msg.attachment_path}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 underline text-[11px]"
+                    className="inline-flex items-center gap-1 text-xs underline decoration-emerald-200"
                   >
                     📎 {msg.attachment_name}
                   </a>
                 )}
 
-                {/* Texto del mensaje */}
-                {msg.mensaje && (
+                {/* Texto */}
+                {msg.mensaje && msg.mensaje.trim().length > 0 && (
                   <div className="whitespace-pre-wrap">{msg.mensaje}</div>
                 )}
 
                 <div className="mt-1 text-[10px] opacity-70 text-right">
-                  {new Date(msg.created_at).toLocaleString()}
+                  {new Date(msg.created_at).toLocaleString('es-ES')}
                 </div>
               </div>
+
               {isGestor && (
                 <div className="ml-2 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-700 text-[11px] font-semibold text-white">
                   {inicial}
