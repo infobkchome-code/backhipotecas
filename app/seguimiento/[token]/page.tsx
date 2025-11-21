@@ -2,6 +2,7 @@
 
 import { useEffect, useState, ChangeEvent } from 'react';
 import { useParams } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
 
 type SeguimientoCaso = {
   id: string;
@@ -54,7 +55,6 @@ const ESTADO_LABEL: Record<string, string> = {
   denegado: 'Denegado',
 };
 
-// ---------------- DOCUMENTOS QUE VE EL CLIENTE ----------------
 type DocItem = {
   id: string;
   titulo: string;
@@ -71,6 +71,12 @@ const DOC_ITEMS: DocItem[] = [
   { id: 'extractos_6m', titulo: 'Extractos bancarios últimos 6 meses', obligatorio: false },
   { id: 'extractos_3_6m', titulo: 'Extractos bancarios 3–6 meses', obligatorio: false },
 ];
+
+// Etiqueta bonita para el mensaje de chat al subir archivo
+const DOC_LABELS: Record<string, string> = DOC_ITEMS.reduce(
+  (acc, d) => ({ ...acc, [d.id]: d.titulo }),
+  {} as Record<string, string>
+);
 
 export default function SeguimientoPage() {
   const params = useParams<{ token: string }>();
@@ -166,6 +172,7 @@ export default function SeguimientoPage() {
 
   useEffect(() => {
     loadChat();
+
     const interval = setInterval(() => {
       loadChat();
     }, 10000);
@@ -174,7 +181,7 @@ export default function SeguimientoPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // ---------------- ENVIAR MENSAJE TEXTO ----------------
+  // -------- ENVIAR MENSAJE DE TEXTO --------
   const handleSendMessage = async () => {
     if (!nuevoMensaje.trim() || !token) return;
 
@@ -207,7 +214,7 @@ export default function SeguimientoPage() {
     }
   };
 
-  // ---------------- SUBIR DOCUMENTO (usa API backend upload) ----------------
+  // -------- SUBIR DOCUMENTO DIRECTO AL BUCKET + MENSAJE DE CHAT --------
   const handleDocFileChange =
     (docId: string) => async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -217,20 +224,58 @@ export default function SeguimientoPage() {
       setUploadError(null);
 
       try {
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('docId', docId);
+        // 1) Nombre "limpio"
+        let safeName = file.name
+          .normalize('NFD')
+          .replace(/[\u0300-\u036f]/g, '')
+          .replace(/[^a-zA-Z0-9._-]/g, '_')
+          .replace(/_+/g, '_');
 
-        const res = await fetch(`/api/seguimiento/upload/${token}`, {
+        // 2) Ruta en el bucket (igual filosofía que en el panel interno)
+        const storagePath = `${caso.id}/${docId}/${Date.now()}-${safeName}`;
+
+        // 3) Subir al bucket 'docs' usando el cliente del navegador
+        const { error: uploadError } = await supabase.storage
+          .from('docs')
+          .upload(storagePath, file, { upsert: true });
+
+        if (uploadError) {
+          console.error('Error subiendo archivo cliente:', uploadError);
+          setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
+          setUploadingDocId(null);
+          e.target.value = '';
+          return;
+        }
+
+        // 4) Obtener URL pública del archivo
+        const { data: publicData } = supabase.storage
+          .from('docs')
+          .getPublicUrl(storagePath);
+
+        const publicUrl = publicData?.publicUrl ?? null;
+
+        // 5) Registrar un mensaje en el chat (API seguimiento/chat)
+        const label = DOC_LABELS[docId] ?? 'Documento';
+        const mensajeTexto = `Documento subido: ${label}`;
+
+        const res = await fetch(`/api/seguimiento/chat/${token}`, {
           method: 'POST',
-          body: formData,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mensaje: mensajeTexto,
+            attachment_name: safeName,
+            attachment_path: publicUrl,
+            storage_path: storagePath,
+          }),
         });
 
         const json: ApiChatResponse = await res.json();
 
         if (!res.ok || !json.ok || !json.mensaje) {
-          console.error('Error en upload cliente:', json.error);
-          setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
+          console.error('Error guardando mensaje de archivo:', json.error);
+          setUploadError(
+            'El archivo se ha subido, pero no se ha registrado correctamente.'
+          );
           setUploadingDocId(null);
           e.target.value = '';
           return;
@@ -285,10 +330,16 @@ export default function SeguimientoPage() {
 
         {/* ESTADO Y PROGRESO */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
-          <div>
-            <p className="text-xs text-slate-400 mb-1">Estado actual</p>
-            <p className="inline-flex items-center rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
-              {estadoLabel}
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-xs text-slate-400 mb-1">Estado actual</p>
+              <p className="inline-flex items-center rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
+                {estadoLabel}
+              </p>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Última actualización:{' '}
+              {new Date(caso.updated_at).toLocaleString('es-ES')}
             </p>
           </div>
 
@@ -321,15 +372,17 @@ export default function SeguimientoPage() {
           )}
         </section>
 
-        {/* CHECKLIST DOCUMENTACIÓN PARA EL CLIENTE */}
+        {/* DOCUMENTACIÓN PARA EL ESTUDIO (VISTA TIPO LISTA PROFESIONAL) */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
-            <h2 className="text-sm font-semibold text-slate-200">
-              Documentación para el estudio
-            </h2>
-            <p className="text-[11px] text-slate-400">
-              Sube aquí la documentación necesaria para tu hipoteca.
-            </p>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-200">
+                Documentación para el estudio
+              </h2>
+              <p className="text-[11px] text-slate-400">
+                Sube aquí la documentación necesaria para tu hipoteca.
+              </p>
+            </div>
           </div>
 
           {uploadError && (
@@ -338,14 +391,14 @@ export default function SeguimientoPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="divide-y divide-slate-800 rounded-md border border-slate-800 bg-slate-950/40">
             {DOC_ITEMS.map((doc) => (
               <div
                 key={doc.id}
-                className="border border-slate-700 rounded-lg bg-slate-950/60 p-3 flex flex-col justify-between gap-2"
+                className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-3"
               >
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-1">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
                     <p className="text-xs font-medium text-slate-100">
                       {doc.titulo}
                     </p>
@@ -359,18 +412,15 @@ export default function SeguimientoPage() {
                       {doc.obligatorio ? 'Obligatorio' : 'Opcional'}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-500">
-                    Puedes subir uno o varios archivos relacionados con este
-                    documento.
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Puedes subir uno o varios archivos relacionados con este documento.
                   </p>
                 </div>
 
-                <div className="flex items-center justify-between mt-1">
+                <div className="sm:w-40">
                   <label className="inline-flex items-center gap-2 text-[11px] text-emerald-100 cursor-pointer">
-                    <span className="px-2 py-1 rounded-md border border-emerald-600 bg-emerald-900/40">
-                      {uploadingDocId === doc.id
-                        ? 'Subiendo...'
-                        : 'Subir archivo'}
+                    <span className="px-3 py-1 rounded-md border border-emerald-600 bg-emerald-900/40 text-xs font-medium">
+                      {uploadingDocId === doc.id ? 'Subiendo…' : 'Subir archivo'}
                     </span>
                     <input
                       type="file"
@@ -503,11 +553,6 @@ export default function SeguimientoPage() {
             </button>
           </div>
         </section>
-
-        <footer className="text-xs text-slate-500">
-          Última actualización:{' '}
-          {new Date(caso.updated_at).toLocaleString('es-ES')}
-        </footer>
       </main>
     </div>
   );
