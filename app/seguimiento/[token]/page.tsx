@@ -78,6 +78,9 @@ const DOC_LABELS: Record<string, string> = DOC_ITEMS.reduce(
   {} as Record<string, string>
 );
 
+// ⚠️ NOMBRE DEL BUCKET DE STORAGE (el que me dijiste: expediente_documentos)
+const STORAGE_BUCKET = 'expediente_documentos';
+
 export default function SeguimientoPage() {
   const params = useParams<{ token: string }>();
   const token = params?.token;
@@ -96,6 +99,7 @@ export default function SeguimientoPage() {
   // SUBIDA DE DOCUMENTOS
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadOk, setUploadOk] = useState<string | null>(null);
 
   // ---------------- CARGA DATOS CASO + LOGS ----------------
   useEffect(() => {
@@ -222,6 +226,7 @@ export default function SeguimientoPage() {
 
       setUploadingDocId(docId);
       setUploadError(null);
+      setUploadOk(null);
 
       try {
         // 1) Nombre "limpio"
@@ -233,28 +238,29 @@ export default function SeguimientoPage() {
 
         // 2) Ruta en el bucket
         const storagePath = `${caso.id}/${docId}/${Date.now()}-${safeName}`;
+        console.log('[UPLOAD cliente] bucket:', STORAGE_BUCKET, 'path:', storagePath);
 
-        // 3) Subir al bucket **expediente_documentos**
+        // 3) Subir al bucket expediente_documentos
         const { error: uploadError } = await supabase.storage
-          .from('expediente_documentos')
+          .from(STORAGE_BUCKET)
           .upload(storagePath, file, { upsert: true });
 
         if (uploadError) {
-          console.error('Error subiendo archivo cliente:', uploadError);
+          console.error('Error subiendo archivo cliente (storage):', uploadError);
           setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
           setUploadingDocId(null);
           e.target.value = '';
           return;
         }
 
-        // 4) Obtener URL pública
+        // 4) Obtener URL pública del archivo
         const { data: publicData } = supabase.storage
-          .from('expediente_documentos')
+          .from(STORAGE_BUCKET)
           .getPublicUrl(storagePath);
 
         const publicUrl = publicData?.publicUrl ?? null;
 
-        // 5) Registrar mensaje en el chat
+        // 5) Registrar un mensaje en el chat
         const label = DOC_LABELS[docId] ?? 'Documento';
         const mensajeTexto = `Documento subido: ${label}`;
 
@@ -282,6 +288,7 @@ export default function SeguimientoPage() {
         }
 
         setMensajes((prev) => [...prev, json.mensaje]);
+        setUploadOk('Archivo subido correctamente.');
         e.target.value = '';
       } catch (err) {
         console.error('Error inesperado subiendo archivo cliente:', err);
@@ -372,7 +379,7 @@ export default function SeguimientoPage() {
           )}
         </section>
 
-        {/* DOCUMENTACIÓN PARA EL ESTUDIO */}
+        {/* DOCUMENTACIÓN PARA EL ESTUDIO (LISTA) */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -388,6 +395,12 @@ export default function SeguimientoPage() {
           {uploadError && (
             <div className="rounded-md border border-red-600 bg-red-950/60 px-3 py-2 text-[11px] text-red-100">
               {uploadError}
+            </div>
+          )}
+
+          {uploadOk && (
+            <div className="rounded-md border border-emerald-600 bg-emerald-950/60 px-3 py-2 text-[11px] text-emerald-100">
+              {uploadOk}
             </div>
           )}
 
@@ -435,7 +448,7 @@ export default function SeguimientoPage() {
           </div>
         </section>
 
-        {/* HISTORIAL */}
+        {/* TIMELINE VISIBLE PARA CLIENTE */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
           <h2 className="text-sm font-semibold text-slate-200">
             Historial de tu expediente
@@ -471,7 +484,7 @@ export default function SeguimientoPage() {
           )}
         </section>
 
-        {/* CHAT */}
+        {/* CHAT CON TU GESTOR */}
         <section className="rounded-lg border border-emerald-700 bg-emerald-950/30 p-4 space-y-3">
           <h2 className="text-sm font-semibold text-emerald-100">
             Chat con tu gestor
