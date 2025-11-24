@@ -276,9 +276,7 @@ export default function DashboardPage() {
           });
         }
       )
-      .subscribe((status) => {
-        console.log('Realtime casos status:', status);
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
@@ -391,104 +389,143 @@ export default function DashboardPage() {
     (c) => c.cliente_tiene_mensajes_nuevos
   ).length;
 
-  return (
-    <div className="min-h-screen bg-slate-950 text-slate-50">
-      {/* -------------------------------- HEADER -------------------------------- */}
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
-        {/* Logo + título */}
-        <div className="flex items-center gap-3">
-          <div className="bg-slate-700 text-white font-bold px-3 py-1.5 rounded-md text-lg tracking-wide">
-            BKC
-          </div>
+  // -----------------------------
+  // Helpers visuales
+  // -----------------------------
+  const getFechaInfo = (c: Caso) => {
+    if (!c.fecha_limite) return { text: '-', color: 'text-slate-500' };
 
-          <div>
-            <h1 className="text-xl font-semibold">BKC Hipotecas</h1>
-            <p className="text-xs text-slate-400 -mt-0.5">
-              Panel de expedientes
+    const now = new Date().getTime();
+    const limit = new Date(c.fecha_limite).getTime();
+    const diff = limit - now;
+    const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
+
+    if (days < 0) {
+      return {
+        text: `Vencido (${Math.abs(days)} días)`,
+        color: 'text-red-600',
+      };
+    }
+    if (days === 0) {
+      return { text: 'Hoy', color: 'text-orange-600' };
+    }
+    if (days === 1) {
+      return { text: 'Mañana', color: 'text-amber-600' };
+    }
+    return { text: `En ${days} días`, color: 'text-slate-600' };
+  };
+
+  const getEstadoClasses = (estado: string) => {
+    return {
+      en_estudio:
+        'bg-sky-50 text-sky-700 border-sky-200',
+      tasacion:
+        'bg-purple-50 text-purple-700 border-purple-200',
+      fein:
+        'bg-indigo-50 text-indigo-700 border-indigo-200',
+      notaria:
+        'bg-yellow-50 text-yellow-700 border-yellow-200',
+      compraventa:
+        'bg-emerald-50 text-emerald-700 border-emerald-200',
+      fin:
+        'bg-slate-100 text-slate-700 border-slate-200',
+      denegado:
+        'bg-red-50 text-red-700 border-red-200',
+    }[estado] as string;
+  };
+
+  // -----------------------------
+  // RENDER
+  // -----------------------------
+  return (
+    <div className="space-y-6">
+      {/* TOP: título + CTA */}
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-xl md:text-2xl font-semibold text-slate-900">
+            Expedientes
+          </h1>
+          <p className="text-sm text-slate-500">
+            Visualiza y prioriza todos tus casos hipotecarios en curso.
+          </p>
+          {casosConMensajesNuevos > 0 && (
+            <p className="text-xs mt-1 text-emerald-700 font-medium">
+              {casosConMensajesNuevos} expediente
+              {casosConMensajesNuevos !== 1 && 's'} con nuevos mensajes del
+              cliente.
             </p>
-            {casosConMensajesNuevos > 0 && (
-              <p className="text-[11px] text-emerald-300 mt-0.5">
-                {casosConMensajesNuevos} expediente
-                {casosConMensajesNuevos !== 1 && 's'} con nuevos mensajes
-              </p>
-            )}
-          </div>
+          )}
         </div>
 
-        {/* Acciones rápidas */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2">
           <Link
             href="/portal/clients/new"
-            className="bg-emerald-500 text-slate-950 px-4 py-2 rounded-md text-sm font-medium hover:bg-emerald-400"
+            className="inline-flex items-center justify-center rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-emerald-500"
           >
             + Nuevo expediente
           </Link>
-
-          <div className="w-8 h-8 rounded-full bg-slate-800 text-slate-300 flex items-center justify-center text-sm">
-            N
-          </div>
         </div>
-      </header>
+      </div>
 
-      {/* -------------------------------- ESTADÍSTICAS -------------------------------- */}
-      <section className="px-6 py-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 gap-3">
+      {/* ESTADÍSTICAS RÁPIDAS */}
+      <section className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
         {ESTADOS.map((item) => (
           <div
             key={item.value}
-            className="rounded-lg bg-slate-900/60 border border-slate-800 p-3 text-center"
+            className="rounded-xl bg-white border border-slate-200 px-3 py-3 shadow-sm"
           >
-            <p className="text-xs text-slate-400">{item.label}</p>
-            <p className="text-lg font-semibold text-slate-100">
+            <p className="text-[11px] text-slate-500">{item.label}</p>
+            <p className="mt-1 text-lg font-semibold text-slate-900">
               {countByEstado(item.value)}
             </p>
           </div>
         ))}
 
-        {/* Urgentes */}
-        <div className="rounded-lg bg-red-950/40 border border-red-800 p-3 text-center">
-          <p className="text-xs text-red-300">Urgentes</p>
-          <p className="text-lg font-semibold text-red-400">{urgentes}</p>
+        <div className="rounded-xl bg-white border border-red-100 px-3 py-3 shadow-sm">
+          <p className="text-[11px] text-red-600">Urgentes</p>
+          <p className="mt-1 text-lg font-semibold text-red-600">
+            {urgentes}
+          </p>
         </div>
 
-        {/* Vencidos */}
-        <div className="rounded-lg bg-orange-950/40 border border-orange-800 p-3 text-center">
-          <p className="text-xs text-orange-300">Vencidos</p>
-          <p className="text-lg font-semibold text-orange-400">
+        <div className="rounded-xl bg-white border border-orange-100 px-3 py-3 shadow-sm">
+          <p className="text-[11px] text-orange-600">Vencidos</p>
+          <p className="mt-1 text-lg font-semibold text-orange-600">
             {vencidos}
           </p>
         </div>
 
-        {/* Docs pendientes */}
-        <div className="rounded-lg bg-amber-950/40 border border-amber-700 p-3 text-center">
-          <p className="text-xs text-amber-300">Docs pendientes</p>
-          <p className="text-lg font-semibold text-amber-300">
+        <div className="rounded-xl bg-white border border-amber-100 px-3 py-3 shadow-sm">
+          <p className="text-[11px] text-amber-700">Docs pendientes</p>
+          <p className="mt-1 text-lg font-semibold text-amber-700">
             {docsPendientesCount}
           </p>
         </div>
       </section>
 
-      {/* -------------------------------- BUSCADOR + FILTROS -------------------------------- */}
-      <section className="px-6 pb-6">
+      {/* BUSCADOR + FILTROS */}
+      <section className="bg-white border border-slate-200 rounded-xl shadow-sm p-3 md:p-4 space-y-3">
         {/* Buscador */}
-        <div className="flex flex-col md:flex-row md:items-center gap-3 mb-3">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por título, cliente, dirección…"
-            className="flex-1 rounded-md bg-slate-900 border border-slate-700 px-4 py-2 text-sm text-slate-50 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-          />
+        <div className="flex flex-col md:flex-row md:items-center gap-3">
+          <div className="flex-1">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por título, cliente, dirección…"
+              className="w-full rounded-lg border border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+            />
+          </div>
         </div>
 
-        {/* Filtros + orden */}
+        {/* Filtros */}
         <div className="flex flex-wrap items-center gap-2">
-          {/* Filtro por estado */}
           <select
             value={filterEstado ?? ''}
             onChange={(e) =>
               setFilterEstado(e.target.value === '' ? null : e.target.value)
             }
-            className="rounded-md bg-slate-900 border border-slate-700 px-3 py-2 text-xs text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           >
             <option value="">Todos los estados</option>
             {ESTADOS.map((e) => (
@@ -498,56 +535,51 @@ export default function DashboardPage() {
             ))}
           </select>
 
-          {/* Filtro urgente */}
           <button
             onClick={() =>
               setFilterUrgente(filterUrgente === true ? null : true)
             }
-            className={`px-3 py-2 rounded-md text-xs border ${
+            className={`px-3 py-2 rounded-lg text-xs border transition ${
               filterUrgente
-                ? 'bg-red-600 border-red-700 text-white'
-                : 'bg-slate-900 border-slate-700 text-slate-300'
+                ? 'bg-red-50 border-red-300 text-red-700'
+                : 'bg-white border-slate-300 text-slate-700'
             }`}
           >
             Urgentes
           </button>
 
-          {/* Filtro vencidos */}
           <button
             onClick={() =>
               setFilterVencido(filterVencido === true ? null : true)
             }
-            className={`px-3 py-2 rounded-md text-xs border ${
+            className={`px-3 py-2 rounded-lg text-xs border transition ${
               filterVencido
-                ? 'bg-orange-600 border-orange-700 text-white'
-                : 'bg-slate-900 border-slate-700 text-slate-300'
+                ? 'bg-orange-50 border-orange-300 text-orange-700'
+                : 'bg-white border-slate-300 text-slate-700'
             }`}
           >
             Vencidos
           </button>
 
-          {/* Filtro docs pendientes */}
           <button
             onClick={() => setFilterDocsPendientes(!filterDocsPendientes)}
-            className={`px-3 py-2 rounded-md text-xs border ${
+            className={`px-3 py-2 rounded-lg text-xs border transition ${
               filterDocsPendientes
-                ? 'bg-amber-500 border-amber-600 text-slate-950'
-                : 'bg-slate-900 border-slate-700 text-slate-300'
+                ? 'bg-amber-50 border-amber-300 text-amber-700'
+                : 'bg-white border-slate-300 text-slate-700'
             }`}
           >
             Docs pendientes
           </button>
 
-          {/* Separador */}
-          <span className="mx-2 h-6 w-px bg-slate-700 hidden md:inline-block" />
+          <span className="hidden md:inline-block mx-2 h-5 w-px bg-slate-200" />
 
-          {/* Orden: por defecto / docs / prioridad */}
           <button
             onClick={() => setSortMode('default')}
-            className={`px-3 py-2 rounded-md text-xs border ${
+            className={`px-3 py-2 rounded-lg text-xs border transition ${
               sortMode === 'default'
-                ? 'bg-slate-100 border-slate-300 text-slate-900'
-                : 'bg-slate-900 border-slate-700 text-slate-300'
+                ? 'bg-slate-900 border-slate-900 text-white'
+                : 'bg-white border-slate-300 text-slate-700'
             }`}
           >
             Últimos mov.
@@ -555,10 +587,10 @@ export default function DashboardPage() {
 
           <button
             onClick={() => setSortMode('docs')}
-            className={`px-3 py-2 rounded-md text-xs border ${
+            className={`px-3 py-2 rounded-lg text-xs border transition ${
               sortMode === 'docs'
-                ? 'bg-emerald-500 border-emerald-600 text-slate-950'
-                : 'bg-slate-900 border-slate-700 text-slate-300'
+                ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                : 'bg-white border-slate-300 text-slate-700'
             }`}
           >
             Menos docs
@@ -566,16 +598,15 @@ export default function DashboardPage() {
 
           <button
             onClick={() => setSortMode('prioridad')}
-            className={`px-3 py-2 rounded-md text-xs border ${
+            className={`px-3 py-2 rounded-lg text-xs border transition ${
               sortMode === 'prioridad'
-                ? 'bg-red-500 border-red-600 text-slate-950'
-                : 'bg-slate-900 border-slate-700 text-slate-300'
+                ? 'bg-red-50 border-red-300 text-red-700'
+                : 'bg-white border-slate-300 text-slate-700'
             }`}
           >
             Prioridad
           </button>
 
-          {/* Reset filtros */}
           <button
             onClick={() => {
               setFilterEstado(null);
@@ -585,83 +616,208 @@ export default function DashboardPage() {
               setSearch('');
               setSortMode('default');
             }}
-            className="px-3 py-2 rounded-md border border-slate-700 text-xs text-slate-300 bg-slate-900 hover:bg-slate-800"
+            className="px-3 py-2 rounded-lg border border-slate-300 text-xs text-slate-700 bg-white hover:bg-slate-50"
           >
             Limpiar filtros
           </button>
         </div>
       </section>
 
-      {/* -------------------------------- TABLA PRO -------------------------------- */}
-      <section className="px-6 pb-20">
-        <div className="border border-slate-800 rounded-lg overflow-hidden">
-          {/* Cabecera tabla */}
-          <div className="bg-slate-900/80 px-4 py-3 grid grid-cols-8 text-xs text-slate-400 font-medium">
-            <div className="col-span-2">Expediente</div>
-            <div>Estado</div>
-            <div>Urgente</div>
-            <div>Fecha límite</div>
-            <div>Prioridad</div>
-            <div>Documentación</div>
-            <div>Acciones</div>
+      {/* LISTADO */}
+      <section className="space-y-4">
+        {/* Estado de carga / vacío */}
+        {loading && (
+          <div className="text-center text-sm text-slate-500 py-8">
+            Cargando expedientes…
           </div>
+        )}
 
-          {/* Cuerpo */}
-          <div className="divide-y divide-slate-800">
-            {loading && (
-              <div className="px-4 py-6 text-center text-slate-500 text-sm">
-                Cargando expedientes…
-              </div>
-            )}
+        {!loading && filtered.length === 0 && (
+          <div className="text-center text-sm text-slate-500 py-8 bg-white border border-slate-200 rounded-xl">
+            No hay expedientes que coincidan con los filtros.
+          </div>
+        )}
 
-            {!loading && filtered.length === 0 && (
-              <div className="px-4 py-6 text-center text-slate-500 text-sm">
-                No hay expedientes que coincidan con los filtros.
-              </div>
-            )}
+        {/* VISTA MÓVIL: CARDS */}
+        {!loading && filtered.length > 0 && (
+          <div className="space-y-3 md:hidden">
+            {filtered.map((c) => {
+              const { text: fechaTexto, color: fechaColor } = getFechaInfo(c);
+              const totalDocs = c.docs_total ?? 0;
+              const doneDocs = c.docs_completados ?? 0;
+              const ratio =
+                totalDocs > 0 ? Math.min(1, doneDocs / totalDocs) : 0;
+              const docsTexto =
+                totalDocs > 0 ? `${doneDocs}/${totalDocs}` : '-';
 
-            {!loading &&
-              filtered.map((c) => {
-                // Fecha límite → countdown
-                let fechaTexto = '-';
-                let fechaColor = 'text-slate-300';
+              let docsColor = 'text-slate-500';
+              if (totalDocs > 0) {
+                if (doneDocs === totalDocs) docsColor = 'text-emerald-600';
+                else if (doneDocs === 0) docsColor = 'text-red-600';
+                else docsColor = 'text-amber-600';
+              }
 
-                if (c.fecha_limite) {
-                  const now = new Date().getTime();
-                  const limit = new Date(c.fecha_limite).getTime();
-                  const diff = limit - now;
-                  const days = Math.ceil(
-                    diff / (1000 * 60 * 60 * 24)
-                  );
+              const prioridad = calcularPrioridad(c);
+              let prioClasses =
+                'bg-slate-100 text-slate-700 border-slate-200';
+              if (prioridad.nivel === 'critica') {
+                prioClasses = 'bg-red-50 text-red-700 border-red-200';
+              } else if (prioridad.nivel === 'alta') {
+                prioClasses = 'bg-orange-50 text-orange-700 border-orange-200';
+              } else if (prioridad.nivel === 'media') {
+                prioClasses = 'bg-yellow-50 text-yellow-700 border-yellow-200';
+              }
 
-                  if (days < 0) {
-                    fechaTexto = `Vencido (${Math.abs(days)} días)`;
-                    fechaColor = 'text-red-400';
-                  } else if (days === 0) {
-                    fechaTexto = 'Hoy';
-                    fechaColor = 'text-orange-400';
-                  } else if (days === 1) {
-                    fechaTexto = 'Mañana';
-                    fechaColor = 'text-yellow-400';
-                  } else {
-                    fechaTexto = `En ${days} días`;
-                    fechaColor = 'text-slate-300';
-                  }
-                }
+              return (
+                <div
+                  key={c.id}
+                  className="rounded-xl bg-white border border-slate-200 p-3 shadow-sm space-y-2"
+                >
+                  <div className="flex justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">
+                        {c.titulo}
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        Último mov.:{' '}
+                        {new Date(
+                          c.updated_at
+                        ).toLocaleDateString('es-ES')}
+                      </p>
+                    </div>
+                    {c.cliente_tiene_mensajes_nuevos && (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        Nuevo mensaje
+                      </span>
+                    )}
+                  </div>
 
-                // Estado → badge
-                const estadoBadge = {
-                  en_estudio: 'bg-blue-900 text-blue-300 border-blue-700',
-                  tasacion: 'bg-purple-900 text-purple-300 border-purple-700',
-                  fein: 'bg-indigo-900 text-indigo-300 border-indigo-700',
-                  notaria: 'bg-yellow-900 text-yellow-300 border-yellow-700',
-                  compraventa:
-                    'bg-green-900 text-green-300 border-green-700',
-                  fin: 'bg-slate-700 text-slate-300 border-slate-600',
-                  denegado: 'bg-red-900 text-red-300 border-red-700',
-                }[c.estado];
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${getEstadoClasses(
+                        c.estado
+                      )}`}
+                    >
+                      {
+                        ESTADOS.find((e) => e.value === c.estado)?.label ??
+                        c.estado
+                      }
+                    </span>
 
-                // Docs resumen + barra
+                    {c.urgente && (
+                      <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 border border-red-200">
+                        ¡Urgente!
+                      </span>
+                    )}
+
+                    <span
+                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] ${prioClasses}`}
+                    >
+                      {prioridad.label}{' '}
+                      <span className="pl-1 text-[10px] opacity-70">
+                        ({prioridad.score})
+                      </span>
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex-1">
+                      <p className={`text-[11px] font-medium ${docsColor}`}>
+                        Docs: {docsTexto}
+                      </p>
+                      <div className="mt-1 h-1.5 w-full rounded-full bg-slate-100 overflow-hidden">
+                        <div
+                          className={`h-1.5 ${
+                            totalDocs === 0
+                              ? 'bg-slate-300'
+                              : doneDocs === totalDocs
+                              ? 'bg-emerald-500'
+                              : 'bg-amber-400'
+                          }`}
+                          style={{ width: `${ratio * 100}%` }}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="text-right">
+                      <p className={`text-[11px] font-medium ${fechaColor}`}>
+                        {fechaTexto}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Link
+                      href={`/portal/case/${c.id}`}
+                      className="inline-flex items-center justify-center rounded-lg border border-emerald-500 px-3 py-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-50"
+                    >
+                      Abrir expediente
+                    </Link>
+
+                    <button
+                      onClick={async () => {
+                        await supabase
+                          .from('casos')
+                          .update({ urgente: !c.urgente })
+                          .eq('id', c.id);
+
+                        const updated = casos.map((x) =>
+                          x.id === c.id ? { ...x, urgente: !c.urgente } : x
+                        );
+                        setCasos(updated);
+                      }}
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-1.5 text-[11px] text-slate-700 bg-white"
+                    >
+                      {c.urgente ? 'Quitar urgente' : 'Marcar urgente'}
+                    </button>
+
+                    <button
+                      onClick={async () => {
+                        const nuevo = !c.prioridad_manual_alta;
+                        await supabase
+                          .from('casos')
+                          .update({ prioridad_manual_alta: nuevo })
+                          .eq('id', c.id);
+
+                        const updated = casos.map((x) =>
+                          x.id === c.id
+                            ? { ...x, prioridad_manual_alta: nuevo }
+                            : x
+                        );
+                        setCasos(updated);
+                      }}
+                      className="inline-flex items-center justify-center rounded-lg border border-slate-300 px-3 py-1.5 text-[11px] text-slate-700 bg-white"
+                    >
+                      {c.prioridad_manual_alta
+                        ? 'Quitar prio alta'
+                        : 'Prio alta'}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ESCRITORIO: TABLA PRO */}
+        {!loading && filtered.length > 0 && (
+          <div className="hidden md:block bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden">
+            {/* Cabecera */}
+            <div className="bg-slate-50 px-4 py-3 grid grid-cols-8 text-xs text-slate-500 font-medium">
+              <div className="col-span-2">Expediente</div>
+              <div>Estado</div>
+              <div>Urgente</div>
+              <div>Fecha límite</div>
+              <div>Prioridad</div>
+              <div>Documentación</div>
+              <div className="text-right">Acciones</div>
+            </div>
+
+            {/* Filas */}
+            <div className="divide-y divide-slate-200">
+              {filtered.map((c) => {
+                const { text: fechaTexto, color: fechaColor } = getFechaInfo(c);
                 const totalDocs = c.docs_total ?? 0;
                 const doneDocs = c.docs_completados ?? 0;
                 const docsTexto =
@@ -669,90 +825,87 @@ export default function DashboardPage() {
                 const ratio =
                   totalDocs > 0 ? Math.min(1, doneDocs / totalDocs) : 0;
 
-                let docsColor = 'text-slate-400';
+                let docsColor = 'text-slate-500';
                 if (totalDocs > 0) {
                   if (doneDocs === totalDocs) {
-                    docsColor = 'text-emerald-400';
+                    docsColor = 'text-emerald-600';
                   } else if (doneDocs === 0) {
-                    docsColor = 'text-red-400';
+                    docsColor = 'text-red-600';
                   } else {
-                    docsColor = 'text-amber-300';
+                    docsColor = 'text-amber-600';
                   }
                 }
 
-                const barBg =
-                  totalDocs === 0
-                    ? 'bg-slate-800'
-                    : doneDocs === totalDocs
-                    ? 'bg-emerald-600'
-                    : 'bg-amber-400';
-
-                // Prioridad
                 const prioridad = calcularPrioridad(c);
                 let prioridadClasses =
-                  'border-slate-700 bg-slate-900 text-slate-300';
+                  'border-slate-200 bg-slate-50 text-slate-700';
                 if (prioridad.nivel === 'critica') {
                   prioridadClasses =
-                    'border-red-600 bg-red-900/60 text-red-200';
+                    'border-red-200 bg-red-50 text-red-700';
                 } else if (prioridad.nivel === 'alta') {
                   prioridadClasses =
-                    'border-orange-500 bg-orange-900/50 text-orange-200';
+                    'border-orange-200 bg-orange-50 text-orange-700';
                 } else if (prioridad.nivel === 'media') {
                   prioridadClasses =
-                    'border-yellow-500 bg-yellow-900/40 text-yellow-200';
+                    'border-yellow-200 bg-yellow-50 text-yellow-700';
                 }
 
                 return (
                   <div
                     key={c.id}
-                    className="grid grid-cols-8 items-center px-4 py-4 hover:bg-slate-900/40 text-sm"
+                    className="grid grid-cols-8 items-center px-4 py-3 text-sm hover:bg-slate-50"
                   >
                     {/* EXPEDIENTE */}
                     <div className="col-span-2">
                       <div className="flex items-center gap-2">
-                        <p className="text-slate-100 font-medium">
-                          {c.titulo}
-                        </p>
+                        <div>
+                          <p className="font-medium text-slate-900">
+                            {c.titulo}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            Último mov.:{' '}
+                            {new Date(
+                              c.updated_at
+                            ).toLocaleDateString('es-ES')}
+                          </p>
+                        </div>
                         {c.cliente_tiene_mensajes_nuevos && (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-700 px-2 py-0.5 text-[11px] font-semibold text-white">
-                            <span className="h-2 w-2 rounded-full bg-emerald-300" />
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
                             Nuevo mensaje
                           </span>
                         )}
                       </div>
-                      <p className="text-xs text-slate-500">
-                        Último movimiento:{' '}
-                        {new Date(
-                          c.updated_at
-                        ).toLocaleDateString('es-ES')}
-                      </p>
                     </div>
 
                     {/* ESTADO */}
                     <div>
                       <span
-                        className={`px-2 py-1 text-xs rounded-md border ${estadoBadge}`}
+                        className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${getEstadoClasses(
+                          c.estado
+                        )}`}
                       >
-                        {ESTADOS.find(
-                          (e) => e.value === c.estado
-                        )?.label || c.estado}
+                        {
+                          ESTADOS.find((e) => e.value === c.estado)
+                            ?.label ?? c.estado
+                        }
                       </span>
                     </div>
 
                     {/* URGENTE */}
                     <div>
                       {c.urgente ? (
-                        <span className="px-2 py-1 text-xs rounded-md bg-red-700 text-white border border-red-800 animate-pulse">
+                        <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 border border-red-200">
                           ¡Urgente!
                         </span>
                       ) : (
-                        <span className="text-slate-500 text-xs">-</span>
+                        <span className="text-xs text-slate-400">-</span>
                       )}
                     </div>
 
                     {/* FECHA LÍMITE */}
                     <div>
-                      <span className={`text-xs ${fechaColor}`}>
+                      <span className={`text-xs font-medium ${fechaColor}`}>
                         {fechaTexto}
                       </span>
                     </div>
@@ -760,7 +913,7 @@ export default function DashboardPage() {
                     {/* PRIORIDAD */}
                     <div>
                       <div
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md border text-xs ${prioridadClasses}`}
+                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border text-[11px] ${prioridadClasses}`}
                       >
                         <span>{prioridad.label}</span>
                         <span className="text-[10px] opacity-70">
@@ -779,25 +932,29 @@ export default function DashboardPage() {
                       <span className={`text-xs font-medium ${docsColor}`}>
                         {docsTexto}
                       </span>
-                      <div className="w-full h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                      <div className="w-full h-1.5 rounded-full bg-slate-100 overflow-hidden">
                         <div
-                          className={`h-1.5 ${barBg}`}
+                          className={`h-1.5 ${
+                            totalDocs === 0
+                              ? 'bg-slate-300'
+                              : doneDocs === totalDocs
+                              ? 'bg-emerald-500'
+                              : 'bg-amber-400'
+                          }`}
                           style={{ width: `${ratio * 100}%` }}
                         />
                       </div>
                     </div>
 
                     {/* ACCIONES */}
-                    <div className="flex gap-2 justify-end">
-                      {/* Abrir expediente */}
+                    <div className="flex items-center justify-end gap-2 text-xs">
                       <Link
                         href={`/portal/case/${c.id}`}
-                        className="text-emerald-400 hover:text-emerald-300 text-xs"
+                        className="text-emerald-700 hover:text-emerald-600 font-medium"
                       >
                         Abrir
                       </Link>
 
-                      {/* Marcar urgente / no urgente */}
                       <button
                         onClick={async () => {
                           await supabase
@@ -806,18 +963,15 @@ export default function DashboardPage() {
                             .eq('id', c.id);
 
                           const updated = casos.map((x) =>
-                            x.id === c.id
-                              ? { ...x, urgente: !c.urgente }
-                              : x
+                            x.id === c.id ? { ...x, urgente: !c.urgente } : x
                           );
                           setCasos(updated);
                         }}
-                        className="text-red-400 hover:text-red-300 text-xs"
+                        className="text-red-600 hover:text-red-500"
                       >
                         {c.urgente ? 'Quitar' : 'Urgente'}
                       </button>
 
-                      {/* Prioridad manual alta ON/OFF */}
                       <button
                         onClick={async () => {
                           const nuevo = !c.prioridad_manual_alta;
@@ -833,7 +987,7 @@ export default function DashboardPage() {
                           );
                           setCasos(updated);
                         }}
-                        className="text-orange-300 hover:text-orange-200 text-xs"
+                        className="text-amber-600 hover:text-amber-500"
                       >
                         {c.prioridad_manual_alta
                           ? 'Quitar prio'
@@ -843,8 +997,9 @@ export default function DashboardPage() {
                   </div>
                 );
               })}
+            </div>
           </div>
-        </div>
+        )}
       </section>
     </div>
   );
