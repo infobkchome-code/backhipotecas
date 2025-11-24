@@ -2,8 +2,8 @@
 
 import { useEffect, useState, ChangeEvent } from 'react';
 import { useParams } from 'next/navigation';
-import { supabase } from '@/lib/supabaseClient';
 
+// -------------------- TIPOS --------------------
 type SeguimientoCaso = {
   id: string;
   titulo: string;
@@ -45,6 +45,7 @@ type ApiChatResponse = {
   error?: string;
 };
 
+// -------------------- CONSTANTES --------------------
 const ESTADO_LABEL: Record<string, string> = {
   en_estudio: 'En estudio',
   tasacion: 'Tasación',
@@ -77,6 +78,10 @@ const DOC_LABELS: Record<string, string> = DOC_ITEMS.reduce(
   {} as Record<string, string>
 );
 
+// -----------------------------------------------------
+//                P Á G I N A   P R I N C I P A L
+// -----------------------------------------------------
+
 export default function SeguimientoPage() {
   const params = useParams<{ token: string }>();
   const token = params?.token;
@@ -92,16 +97,16 @@ export default function SeguimientoPage() {
   const [enviando, setEnviando] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
 
-  // SUBIDA DE DOCUMENTOS
+  // DOCUMENTOS
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadOk, setUploadOk] = useState<string | null>(null);
 
-  // ---------------- CARGA DATOS CASO + LOGS ----------------
+  // -------------- CARGAR DATOS DEL CASO ----------------
   useEffect(() => {
-    const loadData = async () => {
-      if (!token) return;
+    if (!token) return;
 
+    const loadData = async () => {
       setLoading(true);
       setErrorMsg(null);
 
@@ -114,19 +119,7 @@ export default function SeguimientoPage() {
 
         const json: ApiSeguimientoResponse = await res.json();
 
-        if (!res.ok) {
-          if (json.error === 'not_found') {
-            setErrorMsg(
-              'No hemos encontrado ningún expediente asociado a este enlace. Es posible que haya caducado o sea incorrecto.'
-            );
-          } else {
-            setErrorMsg('Error al cargar el seguimiento del expediente.');
-          }
-          setLoading(false);
-          return;
-        }
-
-        if (!json.data) {
+        if (!res.ok || !json.data) {
           setErrorMsg(
             'No hemos encontrado ningún expediente asociado a este enlace.'
           );
@@ -136,10 +129,9 @@ export default function SeguimientoPage() {
 
         setCaso(json.data);
         setLogs(json.logs ?? []);
-        setLoading(false);
       } catch (err) {
-        console.error(err);
         setErrorMsg('Error inesperado al cargar el expediente.');
+      } finally {
         setLoading(false);
       }
     };
@@ -147,9 +139,10 @@ export default function SeguimientoPage() {
     loadData();
   }, [token]);
 
-  // ---------------- CARGA CHAT (cliente) ----------------
+  // ------------------- CARGAR CHAT ---------------------
   const loadChat = async () => {
     if (!token) return;
+
     try {
       const res = await fetch(`/api/seguimiento/chat/${token}`, {
         method: 'GET',
@@ -158,30 +151,19 @@ export default function SeguimientoPage() {
       });
 
       const json: ApiChatResponse = await res.json();
-
-      if (!res.ok) {
-        console.error('Error cargando chat cliente:', json.error);
-        return;
-      }
-
-      setMensajes(json.mensajes ?? []);
+      if (json.mensajes) setMensajes(json.mensajes);
     } catch (e) {
-      console.error('Error inesperado cargando chat cliente:', e);
+      console.error('Error cargando chat:', e);
     }
   };
 
   useEffect(() => {
     loadChat();
-
-    const interval = setInterval(() => {
-      loadChat();
-    }, 10000);
-
+    const interval = setInterval(loadChat, 10000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // -------- ENVIAR MENSAJE DE TEXTO --------
+  // ----------------- ENVIAR MENSAJE --------------------
   const handleSendMessage = async () => {
     if (!nuevoMensaje.trim() || !token) return;
 
@@ -197,123 +179,78 @@ export default function SeguimientoPage() {
 
       const json: ApiChatResponse = await res.json();
 
-      if (!res.ok || !json.ok || !json.mensaje) {
-        console.error('Error enviando mensaje cliente:', json.error);
-        setChatError('Ha ocurrido un error enviando tu mensaje.');
-        setEnviando(false);
+      if (!json.ok || !json.mensaje) {
+        setChatError('Error enviando tu mensaje.');
         return;
       }
 
-      setNuevoMensaje('');
       setMensajes((prev) => [...prev, json.mensaje]);
-    } catch (e) {
-      console.error('Error inesperado enviando mensaje cliente:', e);
-      setChatError('Ha ocurrido un error enviando tu mensaje.');
+      setNuevoMensaje('');
+    } catch {
+      setChatError('Error enviando tu mensaje.');
     } finally {
       setEnviando(false);
     }
   };
 
-  // -------- SUBIR DOCUMENTO AL BUCKET + MENSAJE DE CHAT --------
+  // ------------- SUBIDA DE DOCUMENTOS (NUEVO) ----------
   const handleDocFileChange =
     (docId: string) => async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
-      if (!file || !token || !caso) return;
+      if (!file || !token) return;
 
       setUploadingDocId(docId);
       setUploadError(null);
       setUploadOk(null);
 
       try {
-        // 1) Nombre "limpio"
-        let safeName = file.name
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .replace(/[^a-zA-Z0-9._-]/g, '_')
-          .replace(/_+/g, '_');
+        const form = new FormData();
+        form.append('file', file);
+        form.append('docId', docId);
 
-        // 2) Ruta en el bucket (igual esquema que en panel interno)
-        const storagePath = `${caso.id}/${docId}/${Date.now()}-${safeName}`;
-
-        // 3) Subir al bucket expediente_documentos
-        const { error: uploadError } = await supabase.storage
-          .from('expediente_documentos')
-          .upload(storagePath, file, { upsert: true });
-
-        if (uploadError) {
-          console.error('Error subiendo archivo cliente:', uploadError);
-          setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
-          setUploadingDocId(null);
-          e.target.value = '';
-          return;
-        }
-
-        // 4) URL pública
-        const { data: publicData } = supabase.storage
-          .from('expediente_documentos')
-          .getPublicUrl(storagePath);
-
-        const publicUrl = publicData?.publicUrl ?? null;
-
-        // 5) Registrar un mensaje en el chat (se verá en tu panel también)
-        const label = DOC_LABELS[docId] ?? 'Documento';
-        const mensajeTexto = `Documento subido: ${label}`;
-
-        const res = await fetch(`/api/seguimiento/chat/${token}`, {
+        const res = await fetch(`/api/seguimiento/upload/${token}`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mensaje: mensajeTexto,
-            attachment_name: safeName,
-            attachment_path: publicUrl,
-            storage_path: storagePath,
-            docId, // por si luego queremos sincronizar checklist en el backend
-          }),
+          body: form,
         });
 
-        const json: ApiChatResponse = await res.json();
+        const json = await res.json();
 
-        if (!res.ok || !json.ok || !json.mensaje) {
-          console.error('Error guardando mensaje de archivo:', json.error);
-          setUploadError(
-            'El archivo se ha subido, pero no se ha registrado correctamente.'
-          );
+        if (!res.ok || !json.ok) {
+          setUploadError(json.error || 'No se ha podido subir el archivo.');
           setUploadingDocId(null);
           e.target.value = '';
           return;
         }
 
-        // Añadir mensaje al chat del cliente
-        setMensajes((prev) => [...prev, json.mensaje]);
+        if (json.mensaje) {
+          setMensajes((prev) => [...prev, json.mensaje]);
+        }
 
-        // Feedback claro al cliente
-        setUploadOk(`Se ha subido correctamente: "${label}".`);
+        setUploadOk(`Se ha subido correctamente: "${DOC_LABELS[docId]}".`);
         setTimeout(() => setUploadOk(null), 4000);
-
-        e.target.value = '';
       } catch (err) {
-        console.error('Error inesperado subiendo archivo cliente:', err);
-        setUploadError('No se ha podido subir el archivo. Inténtalo de nuevo.');
+        setUploadError('No se ha podido subir el archivo.');
       } finally {
         setUploadingDocId(null);
+        e.target.value = '';
       }
     };
 
-  // ---------------- RENDER ----------------
+  // ------------------ RENDER ---------------------------
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
-        <div className="text-sm text-slate-300">Cargando expediente…</div>
+        Cargando expediente…
       </div>
     );
   }
 
   if (errorMsg || !caso) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center px-4">
-        <div className="max-w-md text-center space-y-3">
+      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
+        <div className="text-center space-y-3 px-4">
           <h1 className="text-lg font-semibold">Enlace de seguimiento no válido</h1>
-          <p className="text-sm text-slate-300">{errorMsg}</p>
+          <p className="text-sm text-slate-400">{errorMsg}</p>
         </div>
       </div>
     );
@@ -324,55 +261,46 @@ export default function SeguimientoPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
       <main className="max-w-2xl mx-auto px-6 py-10 space-y-6">
-        {/* CABECERA */}
+        
+        {/* ---------------- CABECERA ---------------- */}
         <header className="space-y-2">
           <p className="text-xs uppercase tracking-wide text-emerald-400">
             Seguimiento de expediente hipotecario
           </p>
           <h1 className="text-2xl font-semibold">{caso.titulo}</h1>
           <p className="text-xs text-slate-400">
-            Creado el{' '}
-            {new Date(caso.created_at).toLocaleDateString('es-ES')}
+            Creado el {new Date(caso.created_at).toLocaleDateString('es-ES')}
           </p>
         </header>
 
-        {/* ESTADO Y PROGRESO */}
+        {/* ---------------- ESTADO ---------------- */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="flex justify-between">
             <div>
               <p className="text-xs text-slate-400 mb-1">Estado actual</p>
-              <p className="inline-flex items-center rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-300">
+              <span className="bg-emerald-500/10 text-emerald-300 px-3 py-1 rounded-full text-xs">
                 {estadoLabel}
-              </p>
+              </span>
             </div>
             <p className="text-[11px] text-slate-500">
-              Última actualización:{' '}
-              {new Date(caso.updated_at).toLocaleString('es-ES')}
+              Última actualización: {new Date(caso.updated_at).toLocaleString('es-ES')}
             </p>
           </div>
 
-          <div>
-            <p className="text-xs text-slate-400 mb-1">
-              Avance aproximado del expediente
-            </p>
-            <div className="mt-1 h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-              <div
-                className="h-2 bg-emerald-500 transition-all"
-                style={{
-                  width: `${Math.min(100, Math.max(0, caso.progreso ?? 0))}%`,
-                }}
-              />
-            </div>
-            <p className="mt-1 text-xs text-slate-300">
-              {Math.min(100, Math.max(0, caso.progreso ?? 0))}% completado
-            </p>
+          <p className="text-xs text-slate-400 mb-1">
+            Avance aproximado del expediente
+          </p>
+          <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
+            <div
+              className="h-2 bg-emerald-500"
+              style={{ width: `${caso.progreso}%` }}
+            />
           </div>
+          <p className="text-xs text-slate-300">{caso.progreso}% completado</p>
 
           {caso.notas && (
             <div>
-              <p className="text-xs text-slate-400 mb-1">
-                Comentarios de tu gestor
-              </p>
+              <p className="text-xs text-slate-400 mb-1">Comentarios de tu gestor</p>
               <p className="text-sm text-slate-100 whitespace-pre-wrap">
                 {caso.notas}
               </p>
@@ -380,194 +308,21 @@ export default function SeguimientoPage() {
           )}
         </section>
 
-        {/* DOCUMENTACIÓN PARA EL ESTUDIO (LISTA) */}
+        {/* --------------- SUBIDA DOCUMENTOS ---------------- */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-200">
-                Documentación para el estudio
-              </h2>
-              <p className="text-[11px] text-slate-400">
-                Sube aquí la documentación necesaria para tu hipoteca.
-              </p>
-            </div>
-          </div>
+
+          <h2 className="text-sm font-semibold text-slate-200">
+            Documentación para el estudio
+          </h2>
+          <p className="text-xs text-slate-400">
+            Sube aquí la documentación necesaria para tu hipoteca.
+          </p>
 
           {uploadError && (
-            <div className="rounded-md border border-red-600 bg-red-950/60 px-3 py-2 text-[11px] text-red-100">
+            <div className="text-red-200 text-xs bg-red-900/40 p-2 rounded-md border border-red-700">
               {uploadError}
             </div>
           )}
 
           {uploadOk && (
-            <div className="rounded-md border border-emerald-600 bg-emerald-950/40 px-3 py-2 text-[11px] text-emerald-100">
-              {uploadOk}
-            </div>
-          )}
-
-          <div className="divide-y divide-slate-800 rounded-md border border-slate-800 bg-slate-950/40">
-            {DOC_ITEMS.map((doc) => (
-              <div
-                key={doc.id}
-                className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-3"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs font-medium text-slate-100">
-                      {doc.titulo}
-                    </p>
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                        doc.obligatorio
-                          ? 'border-amber-500 text-amber-300'
-                          : 'border-slate-500 text-slate-300'
-                      }`}
-                    >
-                      {doc.obligatorio ? 'Obligatorio' : 'Opcional'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Puedes subir uno o varios archivos relacionados con este documento.
-                  </p>
-                </div>
-
-                <div className="sm:w-40">
-                  <label className="inline-flex items-center gap-2 text-[11px] text-emerald-100 cursor-pointer">
-                    <span className="px-3 py-1 rounded-md border border-emerald-600 bg-emerald-900/40 text-xs font-medium">
-                      {uploadingDocId === doc.id ? 'Subiendo…' : 'Subir archivo'}
-                    </span>
-                    <input
-                      type="file"
-                      className="hidden"
-                      onChange={handleDocFileChange(doc.id)}
-                      disabled={uploadingDocId === doc.id}
-                    />
-                  </label>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {/* TIMELINE */}
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-slate-200">
-            Historial de tu expediente
-          </h2>
-          <p className="text-xs text-slate-400">
-            Aquí puedes ver los principales hitos: cambios de estado, avance y
-            documentación añadida.
-          </p>
-
-          {logs.length === 0 ? (
-            <p className="text-xs text-slate-500">
-              Aún no hay movimientos registrados visibles para este expediente.
-            </p>
-          ) : (
-            <ul className="space-y-2 text-xs">
-              {logs.map((log) => (
-                <li
-                  key={log.id}
-                  className="flex gap-3 border-b border-slate-800 pb-2 last:border-b-0 last:pb-0"
-                >
-                  <div className="mt-0.5 h-2 w-2 rounded-full bg-emerald-500" />
-                  <div>
-                    <div className="text-slate-300">
-                      {log.descripcion || log.tipo}
-                    </div>
-                    <div className="text-[10px] text-slate-500 mt-0.5">
-                      {new Date(log.created_at).toLocaleString('es-ES')}
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-
-        {/* CHAT CLIENTE */}
-        <section className="rounded-lg border border-emerald-700 bg-emerald-950/30 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-emerald-100">
-            Chat con tu gestor
-          </h2>
-          <p className="text-xs text-emerald-200/80">
-            Envía mensajes directos a tu gestor sobre este expediente. La
-            documentación que subas también aparecerá aquí como archivos
-            adjuntos.
-          </p>
-
-          <div className="max-h-64 overflow-y-auto space-y-2 pr-1 bg-slate-950/40 rounded-md p-2">
-            {mensajes.length === 0 && (
-              <p className="text-xs text-slate-500">
-                Todavía no hay mensajes. Puedes escribir el primero.
-              </p>
-            )}
-
-            {mensajes.map((m) => {
-              const esCliente = m.remitente === 'cliente';
-              return (
-                <div
-                  key={m.id}
-                  className={`flex ${
-                    esCliente ? 'justify-end' : 'justify-start'
-                  }`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-lg px-3 py-2 text-xs space-y-1 ${
-                      esCliente
-                        ? 'bg-emerald-600 text-slate-950'
-                        : 'bg-slate-800 text-slate-100'
-                    }`}
-                  >
-                    {m.attachment_name && m.attachment_path && (
-                      <a
-                        href={m.attachment_path}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 underline decoration-emerald-200 text-[11px]"
-                      >
-                        📎 {m.attachment_name}
-                      </a>
-                    )}
-
-                    {m.mensaje && m.mensaje.trim().length > 0 && (
-                      <p>{m.mensaje}</p>
-                    )}
-
-                    <p className="mt-1 text-[10px] opacity-70">
-                      {new Date(m.created_at).toLocaleString('es-ES')}
-                    </p>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {chatError && (
-            <div className="rounded-md border border-red-600 bg-red-950/60 px-3 py-2 text-[11px] text-red-100">
-              {chatError}
-            </div>
-          )}
-
-          <div className="flex gap-2 pt-1">
-            <input
-              type="text"
-              value={nuevoMensaje}
-              onChange={(e) => setNuevoMensaje(e.target.value)}
-              placeholder="Escribe tu mensaje para tu gestor…"
-              className="flex-1 rounded-md bg-slate-950 border border-emerald-700 px-3 py-2 text-xs text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-            <button
-              type="button"
-              onClick={handleSendMessage}
-              disabled={!nuevoMensaje.trim() || enviando}
-              className="px-4 py-2 rounded-md bg-emerald-500 text-xs font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {enviando ? 'Enviando…' : 'Enviar'}
-            </button>
-          </div>
-        </section>
-      </main>
-    </div>
-  );
-}
+            <div className="text-emerald-200
