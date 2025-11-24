@@ -325,4 +325,146 @@ export default function SeguimientoPage() {
           )}
 
           {uploadOk && (
-            <div className="text-emerald-200
+            <div className="text-emerald-200 text-xs bg-emerald-900/40 p-2 rounded-md border border-emerald-700">
+              {uploadOk}
+            </div>
+          )}
+
+          <div className="divide-y divide-slate-800 rounded-md border border-slate-800 bg-slate-950/40">
+
+            {DOC_ITEMS.map((doc) => (
+              <div
+                key={doc.id}
+                className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-3"
+              >
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <p className="text-xs font-medium">{doc.titulo}</p>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                        doc.obligatorio
+                          ? 'border-amber-500 text-amber-300'
+                          : 'border-slate-500 text-slate-300'
+                      }`}
+                    >
+                      {doc.obligatorio ? 'Obligatorio' : 'Opcional'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Puedes subir uno o varios archivos.
+                  </p>
+                </div>
+
+                <label className="sm:w-40 inline-flex items-center text-[11px] cursor-pointer">
+                  <span className="px-3 py-1 rounded-md border border-emerald-600 bg-emerald-900/40 text-xs">
+                    {uploadingDocId === doc.id ? 'Subiendo…' : 'Subir archivo'}
+                  </span>
+                  <input
+                    type="file"
+                    className="hidden"
+                    onChange={handleDocFileChange(doc.id)}
+                    disabled={uploadingDocId === doc.id}
+                  />
+                </label>
+              </div>
+            ))}
+
+          </div>
+        </section>
+
+        {/* ---------------- TIMELINE ---------------- */}
+        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-slate-200">Historial del expediente</h2>
+          <p className="text-xs text-slate-400">
+            Cambios de estado, avance y documentos añadidos.
+          </p>
+
+          {logs.length === 0 ? (
+            <p className="text-xs text-slate-500">Aún no hay movimientos registrados.</p>
+          ) : (
+            <ul className="space-y-2 text-xs">
+              {logs.map((log) => (
+                <li key={log.id} className="flex gap-3 border-b border-slate-800 pb-2">
+                  <div className="h-2 w-2 rounded-full bg-emerald-500 mt-0.5" />
+                  <div>
+                    <p className="text-slate-300">{log.descripcion}</p>
+                    <p className="text-[10px] text-slate-500">
+                      {new Date(log.created_at).toLocaleString('es-ES')}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        {/* ---------------- CHAT ---------------- */}
+        <section className="rounded-lg border border-emerald-700 bg-emerald-950/30 p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-emerald-100">Chat con tu gestor</h2>
+
+          <div className="max-h-64 overflow-y-auto space-y-2 bg-slate-950/40 rounded-md p-2">
+
+            {mensajes.length === 0 && (
+              <p className="text-xs text-slate-500">No hay mensajes todavía.</p>
+            )}
+
+            {mensajes.map((m) => {
+              const esCliente = m.remitente === 'cliente';
+
+              return (
+                <div key={m.id} className={`flex ${esCliente ? 'justify-end' : 'justify-start'}`}>
+                  <div
+                    className={`max-w-[80%] rounded-lg px-3 py-2 text-xs space-y-1 ${
+                      esCliente ? 'bg-emerald-600 text-slate-950' : 'bg-slate-800 text-white'
+                    }`}
+                  >
+                    {m.attachment_name && m.attachment_path && (
+                      <a
+                        href={m.attachment_path}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline decoration-emerald-200 text-[11px]"
+                      >
+                        📎 {m.attachment_name}
+                      </a>
+                    )}
+
+                    {m.mensaje && <p>{m.mensaje}</p>}
+
+                    <p className="text-[10px] opacity-70">
+                      {new Date(m.created_at).toLocaleString('es-ES')}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {chatError && (
+            <div className="bg-red-900/40 border border-red-600 text-red-100 p-2 rounded-md text-[11px]">
+              {chatError}
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <input
+              type="text"
+              value={nuevoMensaje}
+              onChange={(e) => setNuevoMensaje(e.target.value)}
+              placeholder="Escribe tu mensaje…"
+              className="flex-1 rounded-md bg-slate-950 border border-emerald-700 px-3 py-2 text-xs"
+            />
+            <button
+              onClick={handleSendMessage}
+              disabled={!nuevoMensaje.trim() || enviando}
+              className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-md text-xs disabled:opacity-50"
+            >
+              {enviando ? 'Enviando…' : 'Enviar'}
+            </button>
+          </div>
+        </section>
+
+      </main>
+    </div>
+  );
+}
