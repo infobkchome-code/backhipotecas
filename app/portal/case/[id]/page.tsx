@@ -631,21 +631,25 @@ export default function CaseDetailPage() {
     }
   };
 
-  const handleDownload = async (file: FileItem) => {
-    if (!file?.storage_path) return;
+ const handleDownload = (file: FileItem) => {
+  if (!file?.storage_path) {
+    setDocsMsg('Ruta de archivo no válida.');
+    return;
+  }
 
-    const { data, error } = await supabase.storage
-      .from('docs')
-      .createSignedUrl(file.storage_path, 60 * 10);
+  const { data } = supabase.storage
+    .from('docs')
+    .getPublicUrl(file.storage_path);
 
-    if (error || !data?.signedUrl) {
-      console.error('Error creando signed URL:', error);
-      setDocsMsg('No se pudo descargar el documento.');
-      return;
-    }
+  if (!data?.publicUrl) {
+    setDocsMsg('No se pudo generar la URL de descarga.');
+    return;
+  }
 
-    window.open(data.signedUrl, '_blank');
-  };
+  // Abrir el documento en una pestaña nueva
+  window.open(data.publicUrl, '_blank');
+};
+
 
   const handleAddNota = async () => {
     if (!nuevaNota.trim() || !caso) return;
