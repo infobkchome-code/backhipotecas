@@ -15,10 +15,10 @@ if (!supabaseUrl || !serviceKey) {
 
 const supabaseAdmin = createClient(supabaseUrl!, serviceKey!);
 
-// Nombre REAL del bucket
-const STORAGE_BUCKET = 'expediente_documentos';
+// 👉 MISMO bucket que usas en el panel interno
+const STORAGE_BUCKET = 'docs';
 
-// pequeño helper para buscar el caso por token
+// helper: buscar caso por token
 async function getCasoByToken(token: string) {
   const { data, error } = await supabaseAdmin
     .from('casos')
@@ -28,6 +28,30 @@ async function getCasoByToken(token: string) {
 
   if (error || !data) return null;
   return data as { id: string; titulo: string | null };
+}
+
+// mapear el docId del portal cliente al tipo usado en el checklist
+function mapDocIdToTipo(docId: string | null): string | null {
+  if (!docId) return null;
+
+  switch (docId) {
+    case 'dni_comprador':
+    case 'dni_cliente':
+      return 'dni';
+    case 'nominas_3m':
+      return 'nominas';
+    case 'contrato_trabajo':
+      return 'contrato_trabajo';
+    case 'vida_laboral':
+      return 'vida_laboral';
+    case 'renta':
+      return 'renta';
+    case 'extractos_6m':
+    case 'extractos_3_6m':
+      return 'extractos';
+    default:
+      return null;
+  }
 }
 
 export async function POST(
@@ -66,7 +90,7 @@ export async function POST(
 
   const originalName = file.name || 'documento.pdf';
 
-  // normalizar nombre
+  // 3) Nombre y ruta seguros
   const safeName = originalName
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -76,7 +100,7 @@ export async function POST(
   const folder = docId || 'otros';
   const storagePath = `${caso.id}/${folder}/${timestamp}-${safeName}`;
 
-  // 3) Subir al bucket con SERVICE KEY
+  // 4) Subir al bucket con SERVICE KEY (bucket: docs)
   const { error: uploadError } = await supabaseAdmin.storage
     .from(STORAGE_BUCKET)
     .upload(storagePath, file);
@@ -84,17 +108,88 @@ export async function POST(
   if (uploadError) {
     console.error('❌ Error subiendo archivo cliente:', uploadError);
     return NextResponse.json(
-      { ok: false, error: 'No se ha podido subir el archivo al servidor' },
+      { ok: false, error: 'No se ha podido subir el archivo.' },
       { status: 500 }
     );
   }
 
-  // 4) Obtener URL pública
+  // 5) Obtener URL pública
   const {
     data: { publicUrl },
   } = supabaseAdmin.storage.from(STORAGE_BUCKET).getPublicUrl(storagePath);
 
-  // 5) Crear mensaje en el chat (remitente = cliente)
+  // 6) Guardar metadatos en expediente_documentos
+  const docTipo = mapDocIdToTipo(docId) || docId || 'otros';
+
+  const { error: docError } = await supabaseAdmin
+    .from('expediente_documentos')
+    .insert({
+      caso_id: caso.id,
+      user_id: null, // viene del portal cliente
+      tipo: docTipo,
+      nombre_archivo: originalName,
+      storage_path: storagePath,
+    });
+
+  if (docError) {
+    console.error('❌ Error guardando metadatos documento cliente:', docError);
+  }
+
+  // 7) Crear log de movimiento
+  const descripcionLog = `Documento (${docTipo}) subido por el cliente: ${originalName}`;
+
+  const { error: logError } = await supabaseAdmin
+    .from('expediente_logs')
+    .insert({
+      caso_id: caso.id,
+      user_id: null,
+      tipo: 'documento_cliente',
+      descripcion: descripcionLog,
+      visible_cliente: true,
+    });
+
+  if (logError) {
+    console.error('❌ Error creando log de documento cliente:', logError);
+  }
+
+  // 8) Marcar checklist según el tipo subido
+  const tipoChecklist = mapDocIdToTipo(docId);
+
+  if (tipoChecklist) {
+    const { data: checklistRows, error: checklistError } = await supabaseAdmin
+      .from('casos_documentos_requeridos')
+      .select(
+        `
+        id,
+        completado,
+        doc:documentos_requeridos (
+          tipo
+        )
+      `
+      )
+      .eq('caso_id', caso.id);
+
+    if (!checklistError && checklistRows) {
+      const pendientes = (checklistRows as any[]).filter(
+        (row) => !row.completado && row.doc?.tipo === tipoChecklist
+      );
+
+      for (const row of pendientes) {
+        await supabaseAdmin
+          .from('casos_documentos_requeridos')
+          .update({
+            completado: true,
+            completado_por: null,
+            completado_en: new Date().toISOString(),
+          })
+          .eq('id', row.id);
+      }
+    } else if (checklistError) {
+      console.error('❌ Error leyendo checklist para marcar:', checklistError);
+    }
+  }
+
+  // 9) Crear mensaje de chat asociado
   const mensajeTexto = docId
     ? `Documento subido: ${docId}`
     : 'Documento subido por el cliente';
@@ -135,7 +230,7 @@ export async function POST(
     );
   }
 
-  // 6) Marcar que hay mensaje nuevo del cliente en la tabla casos
+  // 10) Marcar que hay mensaje nuevo del cliente en la tabla casos
   await supabaseAdmin
     .from('casos')
     .update({ cliente_tiene_mensajes_nuevos: true })
