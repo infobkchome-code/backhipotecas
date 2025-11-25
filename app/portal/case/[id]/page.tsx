@@ -17,6 +17,16 @@ type Caso = {
   urgente: boolean;
   fecha_limite: string | null;
   tipo_cliente: string | null;
+  // 👇 datos configurables
+  cliente_nombre?: string | null;
+  cliente_email?: string | null;
+  cliente_telefono?: string | null;
+  banco_principal?: string | null;
+  importe_solicitado?: number | null;
+  importe_aprobado?: number | null;
+  tipo_interes?: number | null;
+  plazo_anios?: number | null;
+  cuota_aprox?: number | null;
 };
 
 type FileItem = {
@@ -46,6 +56,7 @@ type ChecklistItem = {
   id: string;
   completado: boolean;
   completado_en: string | null;
+  habilitar_cliente: boolean | null;
   doc: {
     id: string;
     tipo: string;
@@ -101,11 +112,23 @@ export default function CaseDetailPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  // estado expediente
   const [estado, setEstado] = useState('en_estudio');
   const [progreso, setProgreso] = useState(0);
   const [notas, setNotas] = useState('');
   const [urgente, setUrgente] = useState(false);
   const [fechaLimite, setFechaLimite] = useState<string | null>(null);
+
+  // 👇 datos del cliente / operación (editables)
+  const [clienteNombre, setClienteNombre] = useState('');
+  const [clienteEmail, setClienteEmail] = useState('');
+  const [clienteTelefono, setClienteTelefono] = useState('');
+  const [bancoPrincipal, setBancoPrincipal] = useState('');
+  const [importeSolicitado, setImporteSolicitado] = useState('');
+  const [importeAprobado, setImporteAprobado] = useState('');
+  const [tipoInteres, setTipoInteres] = useState('');
+  const [plazoAnios, setPlazoAnios] = useState('');
+  const [cuotaAprox, setCuotaAprox] = useState('');
 
   const [files, setFiles] = useState<FileItem[]>([]);
   const [fileToUpload, setFileToUpload] = useState<File | null>(null);
@@ -209,6 +232,7 @@ export default function CaseDetailPage() {
         id,
         completado,
         completado_en,
+        habilitar_cliente,
         doc:documentos_requeridos (
           id,
           tipo,
@@ -267,6 +291,7 @@ export default function CaseDetailPage() {
         caso_id: casoId,
         doc_id: d.id,
         completado: false,
+        habilitar_cliente: true,
       }));
 
       const { error: insertError } = await supabase
@@ -287,6 +312,7 @@ export default function CaseDetailPage() {
           id,
           completado,
           completado_en,
+          habilitar_cliente,
           doc:documentos_requeridos (
             id,
             tipo,
@@ -331,7 +357,6 @@ export default function CaseDetailPage() {
       .from('casos_documentos_requeridos')
       .update({
         completado: nuevoEstado,
-        completado_por: nuevoEstado ? userId : null,
         completado_en: nuevoEstado ? new Date().toISOString() : null,
       })
       .eq('id', item.id);
@@ -355,7 +380,30 @@ export default function CaseDetailPage() {
     );
   };
 
-  // -------- cargar caso, logs, notas, checklist (SIN exigir login) --------
+  const handleToggleClienteUpload = async (item: ChecklistItem) => {
+    if (!item?.id) return;
+
+    const nuevo = !item.habilitar_cliente;
+
+    const { error } = await supabase
+      .from('casos_documentos_requeridos')
+      .update({ habilitar_cliente: nuevo })
+      .eq('id', item.id);
+
+    if (error) {
+      console.error('Error cambiando habilitación cliente:', error);
+      setChecklistError('No se pudo actualizar la configuración del cliente.');
+      return;
+    }
+
+    setChecklist((prev) =>
+      prev.map((c) =>
+        c.id === item.id ? { ...c, habilitar_cliente: nuevo } : c
+      )
+    );
+  };
+
+  // -------- cargar caso, logs, notas, checklist (sin exigir login para ver) --------
   useEffect(() => {
     const load = async () => {
       setLoading(true);
@@ -391,7 +439,16 @@ export default function CaseDetailPage() {
           created_at,
           updated_at,
           tipo_cliente,
-          seguimiento_token
+          seguimiento_token,
+          cliente_nombre,
+          cliente_email,
+          cliente_telefono,
+          banco_principal,
+          importe_solicitado,
+          importe_aprobado,
+          tipo_interes,
+          plazo_anios,
+          cuota_aprox
         `)
         .eq('id', idParam)
         .single();
@@ -418,6 +475,15 @@ export default function CaseDetailPage() {
         urgente: c.urgente ?? false,
         fecha_limite: c.fecha_limite ?? null,
         tipo_cliente: tipoClienteNorm,
+        cliente_nombre: c.cliente_nombre ?? null,
+        cliente_email: c.cliente_email ?? null,
+        cliente_telefono: c.cliente_telefono ?? null,
+        banco_principal: c.banco_principal ?? null,
+        importe_solicitado: c.importe_solicitado ?? null,
+        importe_aprobado: c.importe_aprobado ?? null,
+        tipo_interes: c.tipo_interes ?? null,
+        plazo_anios: c.plazo_anios ?? null,
+        cuota_aprox: c.cuota_aprox ?? null,
       };
 
       setCaso(casoNormalizado);
@@ -426,6 +492,37 @@ export default function CaseDetailPage() {
       setNotas(casoNormalizado.notas ?? '');
       setUrgente(casoNormalizado.urgente);
       setFechaLimite(casoNormalizado.fecha_limite);
+
+      // inicializar datos editables
+      setClienteNombre(casoNormalizado.cliente_nombre ?? '');
+      setClienteEmail(casoNormalizado.cliente_email ?? '');
+      setClienteTelefono(casoNormalizado.cliente_telefono ?? '');
+      setBancoPrincipal(casoNormalizado.banco_principal ?? '');
+      setImporteSolicitado(
+        casoNormalizado.importe_solicitado != null
+          ? String(casoNormalizado.importe_solicitado)
+          : ''
+      );
+      setImporteAprobado(
+        casoNormalizado.importe_aprobado != null
+          ? String(casoNormalizado.importe_aprobado)
+          : ''
+      );
+      setTipoInteres(
+        casoNormalizado.tipo_interes != null
+          ? String(casoNormalizado.tipo_interes)
+          : ''
+      );
+      setPlazoAnios(
+        casoNormalizado.plazo_anios != null
+          ? String(casoNormalizado.plazo_anios)
+          : ''
+      );
+      setCuotaAprox(
+        casoNormalizado.cuota_aprox != null
+          ? String(casoNormalizado.cuota_aprox)
+          : ''
+      );
 
       const { data: logsData, error: logsError } = await supabase
         .from('expediente_logs')
@@ -503,6 +600,17 @@ export default function CaseDetailPage() {
         notas,
         urgente,
         fecha_limite: fechaLimite || null,
+        cliente_nombre: clienteNombre || null,
+        cliente_email: clienteEmail || null,
+        cliente_telefono: clienteTelefono || null,
+        banco_principal: bancoPrincipal || null,
+        importe_solicitado: importeSolicitado
+          ? Number(importeSolicitado)
+          : null,
+        importe_aprobado: importeAprobado ? Number(importeAprobado) : null,
+        tipo_interes: tipoInteres ? Number(tipoInteres) : null,
+        plazo_anios: plazoAnios ? Number(plazoAnios) : null,
+        cuota_aprox: cuotaAprox ? Number(cuotaAprox) : null,
       })
       .eq('id', caso.id)
       .eq('user_id', user.id);
@@ -793,6 +901,127 @@ export default function CaseDetailPage() {
           </div>
         )}
 
+        {/* DATOS DEL CLIENTE Y OPERACIÓN */}
+        <section className="rounded-xl bg-white border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+          <h2 className="text-sm font-semibold text-slate-900">
+            Datos del cliente y de la operación
+          </h2>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Nombre del cliente
+                </label>
+                <input
+                  type="text"
+                  value={clienteNombre}
+                  onChange={(e) => setClienteNombre(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Email
+                </label>
+                <input
+                  type="email"
+                  value={clienteEmail}
+                  onChange={(e) => setClienteEmail(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Teléfono
+                </label>
+                <input
+                  type="tel"
+                  value={clienteTelefono}
+                  onChange={(e) => setClienteTelefono(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Banco principal
+                </label>
+                <input
+                  type="text"
+                  value={bancoPrincipal}
+                  onChange={(e) => setBancoPrincipal(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Importe solicitado (€)
+                  </label>
+                  <input
+                    type="number"
+                    value={importeSolicitado}
+                    onChange={(e) => setImporteSolicitado(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Importe aprobado (€)
+                  </label>
+                  <input
+                    type="number"
+                    value={importeAprobado}
+                    onChange={(e) => setImporteAprobado(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Tipo interés (%)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={tipoInteres}
+                    onChange={(e) => setTipoInteres(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Plazo (años)
+                  </label>
+                  <input
+                    type="number"
+                    value={plazoAnios}
+                    onChange={(e) => setPlazoAnios(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600 mb-1">
+                    Cuota aprox. (€)
+                  </label>
+                  <input
+                    type="number"
+                    value={cuotaAprox}
+                    onChange={(e) => setCuotaAprox(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         {/* ESTADO DEL EXPEDIENTE */}
         <section className="rounded-xl bg-white border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
           <h2 className="text-sm font-semibold text-slate-900 flex items-center justify-between">
@@ -1023,8 +1252,8 @@ export default function CaseDetailPage() {
                 Checklist de documentación para el estudio
               </h2>
               <p className="text-xs text-slate-500">
-                Documentos que necesita este expediente según el tipo de
-                cliente. No se muestra al cliente.
+                Aquí defines qué documentos necesita este expediente y si el
+                cliente puede subirlos desde su portal.
               </p>
             </div>
             <div className="text-right">
@@ -1058,6 +1287,8 @@ export default function CaseDetailPage() {
                   DOC_TIPOS.find((t) => t.value === item.doc?.tipo)?.label ||
                   item.doc?.tipo ||
                   'Documento';
+
+                const habilitado = item.habilitar_cliente ?? false;
 
                 return (
                   <div
@@ -1103,6 +1334,18 @@ export default function CaseDetailPage() {
                         >
                           {item.completado ? 'Completado' : 'Pendiente'}
                         </span>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleClienteUpload(item)}
+                          className={`mt-1 px-2 py-0.5 rounded-full text-[10px] border ${
+                            habilitado
+                              ? 'border-emerald-300 text-emerald-700 bg-emerald-50'
+                              : 'border-slate-300 text-slate-500 bg-slate-50'
+                          }`}
+                        >
+                          Cliente:{' '}
+                          {habilitado ? 'puede subir' : 'no puede subir'}
+                        </button>
                       </div>
                     </div>
 
