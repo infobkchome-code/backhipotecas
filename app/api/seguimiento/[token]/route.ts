@@ -1,22 +1,22 @@
-import { NextResponse } from 'next/server';
+// app/api/seguimiento/[token]/route.ts
+import { NextRequest, NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
-// GET /api/seguimiento/[token]
 export async function GET(
-  _req: Request,
+  req: NextRequest,
   { params }: { params: { token: string } }
 ) {
   const token = params?.token;
 
   if (!token) {
     return NextResponse.json(
-      { error: 'Token de seguimiento no proporcionado.' },
+      { error: 'Falta el token de seguimiento.' },
       { status: 400 }
     );
   }
 
-  // 1) Buscar el caso por seguimiento_token
-  const { data: caso, error: casoError } = await supabaseAdmin
+  // 1) Buscar el caso por el seguimiento_token en la tabla CASOS
+  const { data: caso, error } = await supabaseAdmin
     .from('casos')
     .select(
       `
@@ -32,10 +32,10 @@ export async function GET(
     .eq('seguimiento_token', token)
     .single();
 
-  if (casoError || !caso) {
-    console.error('Error buscando caso por token:', casoError);
+  if (error || !caso) {
+    console.error('Error cargando expediente por token:', error);
     return NextResponse.json(
-      { error: 'No hemos encontrado ningún expediente asociado a este enlace.' },
+      { error: 'No se ha encontrado el expediente.' },
       { status: 404 }
     );
   }
@@ -43,28 +43,25 @@ export async function GET(
   // 2) Logs visibles para el cliente
   const { data: logs, error: logsError } = await supabaseAdmin
     .from('expediente_logs')
-    .select('id, created_at, tipo, descripcion')
+    .select('id, created_at, tipo, descripcion, visible_cliente')
     .eq('caso_id', caso.id)
     .eq('visible_cliente', true)
     .order('created_at', { ascending: false });
 
   if (logsError) {
-    console.error('Error cargando logs de seguimiento:', logsError);
+    console.error('Error cargando logs de expediente:', logsError);
   }
 
-  return NextResponse.json(
-    {
-      data: {
-        id: caso.id,
-        titulo: caso.titulo,
-        estado: caso.estado,
-        progreso: caso.progreso ?? 0,
-        notas: caso.notas,
-        created_at: caso.created_at,
-        updated_at: caso.updated_at,
-      },
-      logs: logs || [],
+  return NextResponse.json({
+    data: {
+      id: caso.id,
+      titulo: caso.titulo,
+      estado: caso.estado,
+      progreso: caso.progreso,
+      notas: caso.notas,
+      created_at: caso.created_at,
+      updated_at: caso.updated_at,
     },
-    { status: 200 }
-  );
+    logs: logs ?? [],
+  });
 }
