@@ -142,20 +142,12 @@ export default function DashboardPage() {
   // -----------------------------
   useEffect(() => {
     const load = async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      setLoading(true);
 
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
-      // 1) Cargar casos
+      // 1) Cargar casos (SIN auth, trae todos)
       const { data, error } = await supabase
         .from('casos')
-        .select(
-          `
+        .select(`
           id,
           titulo,
           estado,
@@ -165,9 +157,7 @@ export default function DashboardPage() {
           updated_at,
           prioridad_manual_alta,
           cliente_tiene_mensajes_nuevos
-        `
-        )
-        .eq('user_id', user.id)
+        `)
         .order('updated_at', { ascending: false });
 
       if (error || !data) {
@@ -224,6 +214,7 @@ export default function DashboardPage() {
 
     load();
   }, []);
+
 
   // -----------------------------
   // Realtime: actualizar lista cuando cambien casos
