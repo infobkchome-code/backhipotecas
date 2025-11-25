@@ -69,8 +69,16 @@ const DOC_ITEMS: DocItem[] = [
   { id: 'contrato_trabajo', titulo: 'Contrato de trabajo', obligatorio: true },
   { id: 'vida_laboral', titulo: 'Informe de vida laboral', obligatorio: true },
   { id: 'renta', titulo: 'Declaración de la renta', obligatorio: true },
-  { id: 'extractos_6m', titulo: 'Extractos bancarios últimos 6 meses', obligatorio: false },
-  { id: 'extractos_3_6m', titulo: 'Extractos bancarios 3–6 meses', obligatorio: false },
+  {
+    id: 'extractos_6m',
+    titulo: 'Extractos bancarios últimos 6 meses',
+    obligatorio: false,
+  },
+  {
+    id: 'extractos_3_6m',
+    titulo: 'Extractos bancarios 3–6 meses',
+    obligatorio: false,
+  },
 ];
 
 const DOC_LABELS: Record<string, string> = DOC_ITEMS.reduce(
@@ -101,6 +109,9 @@ export default function SeguimientoPage() {
   const [uploadingDocId, setUploadingDocId] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadOk, setUploadOk] = useState<string | null>(null);
+
+  // 🔒 control local: qué documentos ya se han subido en esta sesión
+  const [uploadedDocs, setUploadedDocs] = useState<Record<string, boolean>>({});
 
   // -------------- CARGAR DATOS DEL CASO ----------------
   useEffect(() => {
@@ -226,6 +237,12 @@ export default function SeguimientoPage() {
           setMensajes((prev) => [...prev, json.mensaje]);
         }
 
+        // ✅ Marcamos este tipo de documento como YA SUBIDO
+        setUploadedDocs((prev) => ({
+          ...prev,
+          [docId]: true,
+        }));
+
         setUploadOk(`Se ha subido correctamente: "${DOC_LABELS[docId]}".`);
         setTimeout(() => setUploadOk(null), 4000);
       } catch (err) {
@@ -261,7 +278,6 @@ export default function SeguimientoPage() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
       <main className="max-w-2xl mx-auto px-6 py-10 space-y-6">
-        
         {/* ---------------- CABECERA ---------------- */}
         <header className="space-y-2">
           <p className="text-xs uppercase tracking-wide text-emerald-400">
@@ -275,15 +291,16 @@ export default function SeguimientoPage() {
 
         {/* ---------------- ESTADO ---------------- */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
-          <div className="flex justify-between">
+          <div className="flex justify-between gap-3">
             <div>
               <p className="text-xs text-slate-400 mb-1">Estado actual</p>
               <span className="bg-emerald-500/10 text-emerald-300 px-3 py-1 rounded-full text-xs">
                 {estadoLabel}
               </span>
             </div>
-            <p className="text-[11px] text-slate-500">
-              Última actualización: {new Date(caso.updated_at).toLocaleString('es-ES')}
+            <p className="text-[11px] text-slate-500 text-right">
+              Última actualización:{' '}
+              {new Date(caso.updated_at).toLocaleString('es-ES')}
             </p>
           </div>
 
@@ -292,15 +309,19 @@ export default function SeguimientoPage() {
           </p>
           <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
             <div
-              className="h-2 bg-emerald-500"
+              className="h-2 bg-emerald-500 transition-all"
               style={{ width: `${caso.progreso}%` }}
             />
           </div>
-          <p className="text-xs text-slate-300">{caso.progreso}% completado</p>
+          <p className="text-xs text-slate-300 mt-1">
+            {caso.progreso}% completado
+          </p>
 
           {caso.notas && (
-            <div>
-              <p className="text-xs text-slate-400 mb-1">Comentarios de tu gestor</p>
+            <div className="mt-2">
+              <p className="text-xs text-slate-400 mb-1">
+                Comentarios de tu gestor
+              </p>
               <p className="text-sm text-slate-100 whitespace-pre-wrap">
                 {caso.notas}
               </p>
@@ -310,12 +331,12 @@ export default function SeguimientoPage() {
 
         {/* --------------- SUBIDA DOCUMENTOS ---------------- */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-
           <h2 className="text-sm font-semibold text-slate-200">
             Documentación para el estudio
           </h2>
           <p className="text-xs text-slate-400">
-            Sube aquí la documentación necesaria para tu hipoteca.
+            Sube aquí la documentación necesaria para tu hipoteca. Cada tipo de
+            documento solo se puede enviar una vez.
           </p>
 
           {uploadError && (
@@ -331,64 +352,95 @@ export default function SeguimientoPage() {
           )}
 
           <div className="divide-y divide-slate-800 rounded-md border border-slate-800 bg-slate-950/40">
+            {DOC_ITEMS.map((doc) => {
+              const yaSubido = uploadedDocs[doc.id] === true;
+              const disabled = uploadingDocId === doc.id || yaSubido;
 
-            {DOC_ITEMS.map((doc) => (
-              <div
-                key={doc.id}
-                className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-3"
-              >
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <p className="text-xs font-medium">{doc.titulo}</p>
+              return (
+                <div
+                  key={doc.id}
+                  className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-3"
+                >
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-xs font-medium text-slate-100">
+                        {doc.titulo}
+                      </p>
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                          doc.obligatorio
+                            ? 'border-amber-500 text-amber-300 bg-amber-500/10'
+                            : 'border-slate-500 text-slate-300 bg-slate-800/60'
+                        }`}
+                      >
+                        {doc.obligatorio ? 'Obligatorio' : 'Opcional'}
+                      </span>
+                      {yaSubido && (
+                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-500 text-emerald-200 bg-emerald-600/10">
+                          Enviado
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      {yaSubido
+                        ? 'Ya hemos recibido este documento.'
+                        : 'Formato PDF o imagen. Tamaño máximo según tu correo.'}
+                    </p>
+                  </div>
+
+                  <label className="sm:w-40 inline-flex items-center text-[11px] cursor-pointer justify-end">
                     <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                        doc.obligatorio
-                          ? 'border-amber-500 text-amber-300'
-                          : 'border-slate-500 text-slate-300'
+                      className={`px-3 py-1 rounded-md border text-xs transition ${
+                        disabled
+                          ? 'border-slate-600 text-slate-500 bg-slate-800 cursor-not-allowed'
+                          : 'border-emerald-600 text-emerald-100 bg-emerald-900/40 hover:bg-emerald-800'
                       }`}
                     >
-                      {doc.obligatorio ? 'Obligatorio' : 'Opcional'}
+                      {yaSubido
+                        ? 'Enviado'
+                        : uploadingDocId === doc.id
+                        ? 'Subiendo…'
+                        : 'Subir archivo'}
                     </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-0.5">
-                    Puedes subir uno o varios archivos.
-                  </p>
+                    <input
+                      type="file"
+                      className="hidden"
+                      onChange={handleDocFileChange(doc.id)}
+                      disabled={disabled}
+                    />
+                  </label>
                 </div>
-
-                <label className="sm:w-40 inline-flex items-center text-[11px] cursor-pointer">
-                  <span className="px-3 py-1 rounded-md border border-emerald-600 bg-emerald-900/40 text-xs">
-                    {uploadingDocId === doc.id ? 'Subiendo…' : 'Subir archivo'}
-                  </span>
-                  <input
-                    type="file"
-                    className="hidden"
-                    onChange={handleDocFileChange(doc.id)}
-                    disabled={uploadingDocId === doc.id}
-                  />
-                </label>
-              </div>
-            ))}
-
+              );
+            })}
           </div>
         </section>
 
         {/* ---------------- TIMELINE ---------------- */}
         <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-slate-200">Historial del expediente</h2>
+          <h2 className="text-sm font-semibold text-slate-200">
+            Historial del expediente
+          </h2>
           <p className="text-xs text-slate-400">
-            Cambios de estado, avance y documentos añadidos.
+            Cambios de estado, avance y documentación añadida.
           </p>
 
           {logs.length === 0 ? (
-            <p className="text-xs text-slate-500">Aún no hay movimientos registrados.</p>
+            <p className="text-xs text-slate-500">
+              Aún no hay movimientos registrados.
+            </p>
           ) : (
             <ul className="space-y-2 text-xs">
               {logs.map((log) => (
-                <li key={log.id} className="flex gap-3 border-b border-slate-800 pb-2">
+                <li
+                  key={log.id}
+                  className="flex gap-3 border-b border-slate-800 pb-2 last:border-b-0 last:pb-0"
+                >
                   <div className="h-2 w-2 rounded-full bg-emerald-500 mt-0.5" />
                   <div>
-                    <p className="text-slate-300">{log.descripcion}</p>
-                    <p className="text-[10px] text-slate-500">
+                    <p className="text-slate-300">
+                      {log.descripcion || log.tipo}
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
                       {new Date(log.created_at).toLocaleString('es-ES')}
                     </p>
                   </div>
@@ -400,22 +452,32 @@ export default function SeguimientoPage() {
 
         {/* ---------------- CHAT ---------------- */}
         <section className="rounded-lg border border-emerald-700 bg-emerald-950/30 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-emerald-100">Chat con tu gestor</h2>
+          <h2 className="text-sm font-semibold text-emerald-100">
+            Chat con tu gestor
+          </h2>
 
           <div className="max-h-64 overflow-y-auto space-y-2 bg-slate-950/40 rounded-md p-2">
-
             {mensajes.length === 0 && (
-              <p className="text-xs text-slate-500">No hay mensajes todavía.</p>
+              <p className="text-xs text-slate-500">
+                No hay mensajes todavía.
+              </p>
             )}
 
             {mensajes.map((m) => {
               const esCliente = m.remitente === 'cliente';
 
               return (
-                <div key={m.id} className={`flex ${esCliente ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  key={m.id}
+                  className={`flex ${
+                    esCliente ? 'justify-end' : 'justify-start'
+                  }`}
+                >
                   <div
                     className={`max-w-[80%] rounded-lg px-3 py-2 text-xs space-y-1 ${
-                      esCliente ? 'bg-emerald-600 text-slate-950' : 'bg-slate-800 text-white'
+                      esCliente
+                        ? 'bg-emerald-600 text-slate-950'
+                        : 'bg-slate-800 text-white'
                     }`}
                   >
                     {m.attachment_name && m.attachment_path && (
@@ -452,18 +514,17 @@ export default function SeguimientoPage() {
               value={nuevoMensaje}
               onChange={(e) => setNuevoMensaje(e.target.value)}
               placeholder="Escribe tu mensaje…"
-              className="flex-1 rounded-md bg-slate-950 border border-emerald-700 px-3 py-2 text-xs"
+              className="flex-1 rounded-md bg-slate-950 border border-emerald-700 px-3 py-2 text-xs text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
             />
             <button
               onClick={handleSendMessage}
               disabled={!nuevoMensaje.trim() || enviando}
-              className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-md text-xs disabled:opacity-50"
+              className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-md text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-400"
             >
               {enviando ? 'Enviando…' : 'Enviar'}
             </button>
           </div>
         </section>
-
       </main>
     </div>
   );
