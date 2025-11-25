@@ -32,9 +32,17 @@ type MensajeChat = {
   storage_path?: string | null;
 };
 
+type ClienteDoc = {
+  id: string;
+  titulo: string;
+  obligatorio: boolean;
+  ya_subido: boolean;
+};
+
 type ApiSeguimientoResponse = {
   data?: SeguimientoCaso;
   logs?: LogItem[];
+  docs?: ClienteDoc[];
   error?: string;
 };
 
@@ -56,36 +64,6 @@ const ESTADO_LABEL: Record<string, string> = {
   denegado: 'Denegado',
 };
 
-type DocItem = {
-  id: string;
-  titulo: string;
-  obligatorio: boolean;
-};
-
-const DOC_ITEMS: DocItem[] = [
-  { id: 'dni_comprador', titulo: 'DNI/NIE de comprador(es)', obligatorio: true },
-  { id: 'dni_cliente', titulo: 'DNI/NIE del cliente', obligatorio: true },
-  { id: 'nominas_3m', titulo: 'Nóminas de los últimos 3 meses', obligatorio: true },
-  { id: 'contrato_trabajo', titulo: 'Contrato de trabajo', obligatorio: true },
-  { id: 'vida_laboral', titulo: 'Informe de vida laboral', obligatorio: true },
-  { id: 'renta', titulo: 'Declaración de la renta', obligatorio: true },
-  {
-    id: 'extractos_6m',
-    titulo: 'Extractos bancarios últimos 6 meses',
-    obligatorio: false,
-  },
-  {
-    id: 'extractos_3_6m',
-    titulo: 'Extractos bancarios 3–6 meses',
-    obligatorio: false,
-  },
-];
-
-const DOC_LABELS: Record<string, string> = DOC_ITEMS.reduce(
-  (acc, d) => ({ ...acc, [d.id]: d.titulo }),
-  {} as Record<string, string>
-);
-
 // -----------------------------------------------------
 //                P Á G I N A   P R I N C I P A L
 // -----------------------------------------------------
@@ -96,6 +74,7 @@ export default function SeguimientoPage() {
 
   const [caso, setCaso] = useState<SeguimientoCaso | null>(null);
   const [logs, setLogs] = useState<LogItem[]>([]);
+  const [docs, setDocs] = useState<ClienteDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -111,9 +90,11 @@ export default function SeguimientoPage() {
   const [uploadOk, setUploadOk] = useState<string | null>(null);
 
   // 🔒 control local: qué documentos ya se han subido en esta sesión
-  const [uploadedDocs, setUploadedDocs] = useState<Record<string, boolean>>({});
+  const [uploadedDocsLocal, setUploadedDocsLocal] = useState<
+    Record<string, boolean>
+  >({});
 
-  // -------------- CARGAR DATOS DEL CASO ----------------
+  // -------------- CARGAR DATOS DEL CASO + DOCS ----------------
   useEffect(() => {
     if (!token) return;
 
@@ -140,6 +121,7 @@ export default function SeguimientoPage() {
 
         setCaso(json.data);
         setLogs(json.logs ?? []);
+        setDocs(json.docs ?? []);
       } catch (err) {
         setErrorMsg('Error inesperado al cargar el expediente.');
       } finally {
@@ -204,20 +186,21 @@ export default function SeguimientoPage() {
     }
   };
 
-  // ------------- SUBIDA DE DOCUMENTOS (NUEVO) ----------
+  // ------------- SUBIDA DE DOCUMENTOS ------------------
   const handleDocFileChange =
-    (docId: string) => async (e: ChangeEvent<HTMLInputElement>) => {
+    (doc: ClienteDoc) => async (e: ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (!file || !token) return;
 
-      setUploadingDocId(docId);
+      setUploadingDocId(doc.id);
       setUploadError(null);
       setUploadOk(null);
 
       try {
         const form = new FormData();
         form.append('file', file);
-        form.append('docId', docId);
+        // ⚠️ Importante: aquí usamos el ID del registro de casos_documentos_requeridos
+        form.append('docId', doc.id);
 
         const res = await fetch(`/api/seguimiento/upload/${token}`, {
           method: 'POST',
@@ -237,13 +220,21 @@ export default function SeguimientoPage() {
           setMensajes((prev) => [...prev, json.mensaje]);
         }
 
-        // ✅ Marcamos este tipo de documento como YA SUBIDO
-        setUploadedDocs((prev) => ({
+        // ✅ Marcamos este documento como subido:
+        //   1) Local, para la sesión actual
+        setUploadedDocsLocal((prev) => ({
           ...prev,
-          [docId]: true,
+          [doc.id]: true,
         }));
 
-        setUploadOk(`Se ha subido correctamente: "${DOC_LABELS[docId]}".`);
+        //   2) Y también en el array de docs (para que se vea “Enviado” sin recargar)
+        setDocs((prev) =>
+          prev.map((d) =>
+            d.id === doc.id ? { ...d, ya_subido: true } : d
+          )
+        );
+
+        setUploadOk(`Se ha subido correctamente: "${doc.titulo}".`);
         setTimeout(() => setUploadOk(null), 4000);
       } catch (err) {
         setUploadError('No se ha podido subir el archivo.');
@@ -334,85 +325,96 @@ export default function SeguimientoPage() {
           <h2 className="text-sm font-semibold text-slate-200">
             Documentación para el estudio
           </h2>
-          <p className="text-xs text-slate-400">
-            Sube aquí la documentación necesaria para tu hipoteca. Cada tipo de
-            documento solo se puede enviar una vez.
-          </p>
 
-          {uploadError && (
-            <div className="text-red-200 text-xs bg-red-900/40 p-2 rounded-md border border-red-700">
-              {uploadError}
-            </div>
+          {docs.length === 0 && (
+            <p className="text-xs text-slate-500">
+              De momento no hay documentación que tengas que subir por aquí.
+            </p>
           )}
 
-          {uploadOk && (
-            <div className="text-emerald-200 text-xs bg-emerald-900/40 p-2 rounded-md border border-emerald-700">
-              {uploadOk}
-            </div>
-          )}
+          {docs.length > 0 && (
+            <>
+              <p className="text-xs text-slate-400">
+                Sube aquí la documentación necesaria para tu hipoteca. Cada tipo de
+                documento solo se puede enviar una vez.
+              </p>
 
-          <div className="divide-y divide-slate-800 rounded-md border border-slate-800 bg-slate-950/40">
-            {DOC_ITEMS.map((doc) => {
-              const yaSubido = uploadedDocs[doc.id] === true;
-              const disabled = uploadingDocId === doc.id || yaSubido;
-
-              return (
-                <div
-                  key={doc.id}
-                  className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-3"
-                >
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <p className="text-xs font-medium text-slate-100">
-                        {doc.titulo}
-                      </p>
-                      <span
-                        className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                          doc.obligatorio
-                            ? 'border-amber-500 text-amber-300 bg-amber-500/10'
-                            : 'border-slate-500 text-slate-300 bg-slate-800/60'
-                        }`}
-                      >
-                        {doc.obligatorio ? 'Obligatorio' : 'Opcional'}
-                      </span>
-                      {yaSubido && (
-                        <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-500 text-emerald-200 bg-emerald-600/10">
-                          Enviado
-                        </span>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-0.5">
-                      {yaSubido
-                        ? 'Ya hemos recibido este documento.'
-                        : 'Formato PDF o imagen. Tamaño máximo según tu correo.'}
-                    </p>
-                  </div>
-
-                  <label className="sm:w-40 inline-flex items-center text-[11px] cursor-pointer justify-end">
-                    <span
-                      className={`px-3 py-1 rounded-md border text-xs transition ${
-                        disabled
-                          ? 'border-slate-600 text-slate-500 bg-slate-800 cursor-not-allowed'
-                          : 'border-emerald-600 text-emerald-100 bg-emerald-900/40 hover:bg-emerald-800'
-                      }`}
-                    >
-                      {yaSubido
-                        ? 'Enviado'
-                        : uploadingDocId === doc.id
-                        ? 'Subiendo…'
-                        : 'Subir archivo'}
-                    </span>
-                    <input
-                      type="file"
-                      className="hidden"
-                      onChange={handleDocFileChange(doc.id)}
-                      disabled={disabled}
-                    />
-                  </label>
+              {uploadError && (
+                <div className="text-red-200 text-xs bg-red-900/40 p-2 rounded-md border border-red-700">
+                  {uploadError}
                 </div>
-              );
-            })}
-          </div>
+              )}
+
+              {uploadOk && (
+                <div className="text-emerald-200 text-xs bg-emerald-900/40 p-2 rounded-md border border-emerald-700">
+                  {uploadOk}
+                </div>
+              )}
+
+              <div className="divide-y divide-slate-800 rounded-md border border-slate-800 bg-slate-950/40">
+                {docs.map((doc) => {
+                  const yaSubido = doc.ya_subido || uploadedDocsLocal[doc.id];
+                  const disabled = uploadingDocId === doc.id || yaSubido;
+
+                  return (
+                    <div
+                      key={doc.id}
+                      className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-3"
+                    >
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-xs font-medium text-slate-100">
+                            {doc.titulo}
+                          </p>
+                          <span
+                            className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                              doc.obligatorio
+                                ? 'border-amber-500 text-amber-300 bg-amber-500/10'
+                                : 'border-slate-500 text-slate-300 bg-slate-800/60'
+                            }`}
+                          >
+                            {doc.obligatorio ? 'Obligatorio' : 'Opcional'}
+                          </span>
+                          {yaSubido && (
+                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-500 text-emerald-200 bg-emerald-600/10">
+                              Enviado
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 mt-0.5">
+                          {yaSubido
+                            ? 'Ya hemos recibido este documento.'
+                            : 'Formato PDF o imagen. Tamaño máximo según tu correo.'}
+                        </p>
+                      </div>
+
+                      <label className="sm:w-40 inline-flex items-center text-[11px] cursor-pointer justify-end">
+                        <span
+                          className={`px-3 py-1 rounded-md border text-xs transition ${
+                            disabled
+                              ? 'border-slate-600 text-slate-500 bg-slate-800 cursor-not-allowed'
+                              : 'border-emerald-600 text-emerald-100 bg-emerald-900/40 hover:bg-emerald-800'
+                          }`}
+                        >
+                          {yaSubido
+                            ? 'Enviado'
+                            : uploadingDocId === doc.id
+                            ? 'Subiendo…'
+                            : 'Subir archivo'}
+                        </span>
+                        <input
+                          type="file"
+                          className="hidden"
+                          onChange={handleDocFileChange(doc)}
+                          disabled={disabled}
+                        />
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
         </section>
 
         {/* ---------------- TIMELINE ---------------- */}
