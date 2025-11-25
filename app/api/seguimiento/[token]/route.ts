@@ -1,86 +1,143 @@
+// app/api/seguimiento/[token]/route.ts
 import { NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabaseClient';
+import { supabaseAdmin } from '@/lib/supabaseAdmin';
 
-type CasoRow = {
+type SeguimientoCaso = {
   id: string;
-  titulo: string | null;
-  estado: string | null;
-  progreso: number | null;
+  titulo: string;
+  estado: string;
+  progreso: number;
   notas: string | null;
   created_at: string;
   updated_at: string;
-  seguimiento_token: string | null;
+};
+
+type LogItem = {
+  id: string;
+  created_at: string;
+  tipo: string;
+  descripcion: string | null;
+};
+
+type ClienteDoc = {
+  id: string;
+  titulo: string;
+  obligatorio: boolean;
+  ya_subido: boolean;
 };
 
 export async function GET(
   _req: Request,
   { params }: { params: { token: string } }
 ) {
-  try {
-    const token = params.token;
+  const { token } = params;
 
-    // 1) Buscar el caso por el token de seguimiento
-    const { data: caso, error: casoError } = await supabase
-      .from('casos')
-      .select(
-        `
-        id,
-        titulo,
-        estado,
-        progreso,
-        notas,
-        created_at,
-        updated_at,
-        seguimiento_token
-      `
-      )
-      .eq('seguimiento_token', token)
-      .single<CasoRow>();
-
-    if (casoError || !caso) {
-      console.error('Caso no encontrado para token:', token, casoError);
-      return NextResponse.json(
-        { error: 'not_found' },
-        { status: 404 }
-      );
-    }
-
-    // 2) Cargar sólo los logs visibles para el cliente
-    const { data: logs, error: logsError } = await supabase
-      .from('expediente_logs')
-      .select('id, created_at, tipo, descripcion')
-      .eq('caso_id', caso.id)
-      .eq('visible_cliente', true)
-      .order('created_at', { ascending: true });
-
-    if (logsError) {
-      console.error('Error cargando logs seguimiento:', logsError);
-      return NextResponse.json(
-        { error: 'logs_error' },
-        { status: 500 }
-      );
-    }
-
-    // 3) Normalizar respuesta para el front
-    const respuesta = {
-      id: caso.id,
-      titulo: caso.titulo ?? 'Tu expediente hipotecario',
-      estado: caso.estado ?? 'en_estudio',
-      progreso: caso.progreso ?? 0,
-      notas: caso.notas ?? null,
-      created_at: caso.created_at,
-      updated_at: caso.updated_at,
-    };
-
+  if (!token) {
     return NextResponse.json(
-      { data: respuesta, logs: logs ?? [] },
-      { status: 200 }
-    );
-  } catch (e) {
-    console.error('Error inesperado en GET /api/seguimiento/[token]:', e);
-    return NextResponse.json(
-      { error: 'server_error' },
-      { status: 500 }
+      { error: 'Token no proporcionado.' },
+      { status: 400 }
     );
   }
+
+  // 1) Buscar el caso por seguimiento_token
+  const { data: casoDb, error: casoError } = await supabaseAdmin
+    .from('casos')
+    .select(
+      `
+      id,
+      titulo,
+      estado,
+      progreso,
+      notas,
+      created_at,
+      updated_at
+    `
+    )
+    .eq('seguimiento_token', token)
+    .single();
+
+  if (casoError || !casoDb) {
+    console.error('Error cargando caso seguimiento:', casoError);
+    return NextResponse.json(
+      {
+        error:
+          'No hemos encontrado ningún expediente asociado a este enlace.',
+      },
+      { status: 404 }
+    );
+  }
+
+  const caso: SeguimientoCaso = {
+    id: casoDb.id,
+    titulo: casoDb.titulo ?? 'Expediente sin título',
+    estado: casoDb.estado ?? 'en_estudio',
+    progreso: casoDb.progreso ?? 0,
+    notas: casoDb.notas ?? null,
+    created_at: casoDb.created_at,
+    updated_at: casoDb.updated_at,
+  };
+
+  // 2) Logs visibles para el cliente
+  const { data: logsDb, error: logsError } = await supabaseAdmin
+    .from('expediente_logs')
+    .select('id, created_at, tipo, descripcion, visible_cliente')
+    .eq('caso_id', caso.id)
+    .eq('visible_cliente', true)
+    .order('created_at', { ascending: false });
+
+  if (logsError) {
+    console.error('Error cargando logs seguimiento:', logsError);
+  }
+
+  const logs: LogItem[] =
+    (logsDb || []).map((l: any) => ({
+      id: l.id,
+      created_at: l.created_at,
+      tipo: l.tipo,
+      descripcion: l.descripcion,
+    })) ?? [];
+
+  // 3) Documentos configurados para el cliente
+  //    usamos la tabla casos_documentos_requeridos + documentos_requeridos
+  const { data: docsDb, error: docsError } = await supabaseAdmin
+    .from('casos_documentos_requeridos')
+    .select(
+      `
+      id,
+      completado,
+      habilitar_cliente,
+      doc:documentos_requeridos (
+        tipo,
+        descripcion,
+        obligatorio
+      )
+    `
+    )
+    .eq('caso_id', caso.id)
+    .eq('habilitar_cliente', true);
+
+  if (docsError) {
+    console.error('Error cargando docs seguimiento:', docsError);
+  }
+
+  const docs: ClienteDoc[] =
+    (docsDb || []).map((row: any) => {
+      const titulo =
+        row.doc?.descripcion ||
+        row.doc?.tipo ||
+        'Documento';
+
+      return {
+        id: row.id,
+        titulo,
+        obligatorio: row.doc?.obligatorio ?? false,
+        ya_subido: row.completado ?? false, // de momento usamos "completado"
+      };
+    }) ?? [];
+
+  return NextResponse.json({
+    data: caso,
+    logs,
+    docs,
+  });
 }
