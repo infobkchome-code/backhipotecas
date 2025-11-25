@@ -369,7 +369,6 @@ export default function CaseDetailPage() {
         return;
       }
 
-      // Intentamos obtener usuario pero no bloqueamos si no hay sesión
       try {
         const {
           data: { user },
@@ -536,7 +535,6 @@ export default function CaseDetailPage() {
     setDocsMsg(null);
   };
 
-  // 🔥 SUBIDA + MARCAR CHECKLIST AUTOMÁTICAMENTE
   const handleUpload = async () => {
     if (!fileToUpload) {
       setDocsMsg('Primero selecciona un archivo.');
@@ -704,20 +702,23 @@ export default function CaseDetailPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
-        <div className="text-sm text-slate-300">Cargando expediente…</div>
+      <div className="min-h-screen bg-slate-50 text-slate-700 flex items-center justify-center">
+        <div className="text-sm">Cargando expediente…</div>
       </div>
     );
   }
 
   if (!caso) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col items-center justify-center px-4">
+      <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col items-center justify-center px-4">
         <p className="text-lg font-semibold mb-2">Expediente no encontrado</p>
-        <p className="text-sm text-slate-400 mb-4">
+        <p className="text-sm text-slate-500 mb-4">
           Puede que el enlace no sea correcto o que no tengas permisos sobre este expediente.
         </p>
-        <Link href="/portal" className="text-emerald-400 text-sm hover:underline">
+        <Link
+          href="/portal"
+          className="text-emerald-600 text-sm hover:underline"
+        >
           ← Volver al panel de clientes
         </Link>
       </div>
@@ -737,131 +738,150 @@ export default function CaseDetailPage() {
   const completados = checklist.filter((c) => c.completado).length;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50">
-      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
-        <div>
-          <button
-            onClick={() => router.push('/portal')}
-            className="text-xs text-slate-400 hover:text-slate-200 mb-1"
-          >
-            ← Volver al panel de clientes
-          </button>
+    <div className="min-h-screen bg-slate-50 text-slate-900">
+      {/* HEADER */}
+      <header className="border-b border-slate-200 bg-white">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-3 sm:py-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <button
+              onClick={() => router.push('/portal')}
+              className="text-xs text-slate-500 hover:text-slate-700 mb-1"
+            >
+              ← Volver al panel de expedientes
+            </button>
 
-          <Link
-            href={`/portal/case/${caso.id}/chat`}
-            className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-medium text-slate-950 shadow-sm hover:bg-emerald-400 mt-2"
-          >
-            💬 Abrir chat con cliente
-          </Link>
+            <h1 className="text-lg sm:text-xl font-semibold text-slate-900">
+              {caso.titulo}
+            </h1>
+            <p className="text-xs text-slate-500">
+              Expediente hipotecario · creado el{' '}
+              {new Date(caso.created_at).toLocaleDateString('es-ES')}
+            </p>
+          </div>
 
-          <h1 className="text-xl font-semibold mt-3">{caso.titulo}</h1>
-          <p className="text-xs text-slate-400">
-            Expediente hipotecario · creado el{' '}
-            {new Date(caso.created_at).toLocaleDateString('es-ES')}
-          </p>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/portal/case/${caso.id}/chat`}
+              className="inline-flex items-center rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-500"
+            >
+              💬 Chat con cliente
+            </Link>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-6 py-6 space-y-6">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-5 sm:py-6 space-y-5 sm:space-y-6">
+        {/* ALERTAS */}
         {errorMsg && (
-          <div className="rounded-md border border-red-600 bg-red-950/60 px-4 py-2 text-sm text-red-100">
+          <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
             {errorMsg}
           </div>
         )}
         {successMsg && (
-          <div className="rounded-md border border-emerald-600 bg-emerald-950/60 px-4 py-2 text-sm text-emerald-100">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
             {successMsg}
           </div>
         )}
         {copyMsg && (
-          <div className="rounded-md border border-emerald-600 bg-emerald-950/60 px-4 py-2 text-xs text-emerald-100">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-xs text-emerald-700">
             {copyMsg}
           </div>
         )}
         {checklistError && (
-          <div className="rounded-md border border-amber-600 bg-amber-950/60 px-4 py-2 text-xs text-amber-100">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
             {checklistError}
           </div>
         )}
 
         {/* ESTADO DEL EXPEDIENTE */}
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
-          <h2 className="text-sm font-semibold text-slate-200">
-            Estado del expediente
+        <section className="rounded-xl bg-white border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+          <h2 className="text-sm font-semibold text-slate-900 flex items-center justify-between">
+            <span>Estado del expediente</span>
+            {urgente && (
+              <span className="inline-flex items-center rounded-full bg-red-50 px-2 py-0.5 text-[11px] font-semibold text-red-700 border border-red-200">
+                ¡Urgente!
+              </span>
+            )}
           </h2>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
-              Estado
-            </label>
-            <select
-              value={estado}
-              onChange={(e) => setEstado(e.target.value)}
-              className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            >
-              {ESTADOS.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
-                </option>
-              ))}
-            </select>
-          </div>
+          <div className="grid gap-4 md:grid-cols-2">
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Estado
+                </label>
+                <select
+                  value={estado}
+                  onChange={(e) => setEstado(e.target.value)}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                >
+                  {ESTADOS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
-              Progreso aproximado (%)
-            </label>
-            <input
-              type="number"
-              min={0}
-              max={100}
-              value={progreso}
-              onChange={(e) => setProgreso(Number(e.target.value))}
-              className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-            />
-            <div className="mt-1 h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-              <div
-                className="h-2 bg-emerald-500 transition-all"
-                style={{ width: `${Math.min(100, Math.max(0, progreso))}%` }}
-              />
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Progreso aproximado (%)
+                </label>
+                <input
+                  type="number"
+                  min={0}
+                  max={100}
+                  value={progreso}
+                  onChange={(e) => setProgreso(Number(e.target.value))}
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <div className="mt-2 h-2 w-full bg-slate-100 rounded-full overflow-hidden">
+                  <div
+                    className="h-2 bg-emerald-500 transition-all"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, progreso))}%`,
+                    }}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-[auto,200px] gap-3 items-end">
-            <label className="flex items-center gap-2 text-xs text-slate-200">
-              <input
-                type="checkbox"
-                checked={urgente}
-                onChange={(e) => setUrgente(e.target.checked)}
-                className="h-3 w-3 rounded border-slate-600 bg-slate-900 text-emerald-500 focus:ring-emerald-500"
-              />
-              <span>Marcar expediente como urgente</span>
-            </label>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1">
-                Fecha límite interna
+            <div className="space-y-3">
+              <label className="flex items-center gap-2 text-xs text-slate-700 mt-1">
+                <input
+                  type="checkbox"
+                  checked={urgente}
+                  onChange={(e) => setUrgente(e.target.checked)}
+                  className="h-3 w-3 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span>Marcar expediente como urgente</span>
               </label>
-              <input
-                type="date"
-                value={fechaLimite ?? ''}
-                onChange={(e) =>
-                  setFechaLimite(e.target.value ? e.target.value : null)
-                }
-                className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-              />
+
+              <div>
+                <label className="block text-xs font-medium text-slate-600 mb-1">
+                  Fecha límite interna
+                </label>
+                <input
+                  type="date"
+                  value={fechaLimite ?? ''}
+                  onChange={(e) =>
+                    setFechaLimite(e.target.value ? e.target.value : null)
+                  }
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
             </div>
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-400 mb-1">
+            <label className="block text-xs font-medium text-slate-600 mb-1">
               Nota interna de resumen
             </label>
             <textarea
               rows={4}
               value={notas}
               onChange={(e) => setNotas(e.target.value)}
-              className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-sm text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               placeholder="Ej.: FEIN emitida, tasación en curso, pendiente de documentación, etc."
             />
           </div>
@@ -870,7 +890,7 @@ export default function CaseDetailPage() {
             <button
               type="button"
               onClick={() => router.push('/portal')}
-              className="px-4 py-2 rounded-md border border-slate-700 text-sm text-slate-200 hover:bg-slate-800"
+              className="px-4 py-2 rounded-lg border border-slate-300 text-sm text-slate-700 bg-white hover:bg-slate-50"
             >
               Cancelar
             </button>
@@ -878,7 +898,7 @@ export default function CaseDetailPage() {
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 rounded-md bg-emerald-500 text-slate-950 text-sm font-medium hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {saving ? 'Guardando…' : 'Guardar cambios'}
             </button>
@@ -886,26 +906,26 @@ export default function CaseDetailPage() {
         </section>
 
         {/* DOCUMENTOS (ARCHIVOS) */}
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
-          <h2 className="text-sm font-semibold text-slate-200">
+        <section className="rounded-xl bg-white border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4">
+          <h2 className="text-sm font-semibold text-slate-900">
             Documentación del expediente (archivos)
           </h2>
 
           {docsMsg && (
-            <div className="rounded-md border border-slate-700 bg-slate-950/70 px-4 py-2 text-xs text-slate-200">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-700">
               {docsMsg}
             </div>
           )}
 
           <div className="flex flex-col md:flex-row gap-3 items-start md:items-end">
             <div className="flex-1 w-full">
-              <label className="block text-xs font-medium text-slate-400 mb-1">
+              <label className="block text-xs font-medium text-slate-600 mb-1">
                 Tipo de documento
               </label>
               <select
                 value={docTipo}
                 onChange={(e) => setDocTipo(e.target.value)}
-                className="w-full rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 {DOC_TIPOS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -919,22 +939,22 @@ export default function CaseDetailPage() {
               <input
                 type="file"
                 onChange={handleFileChange}
-                className="text-xs text-slate-300"
+                className="text-xs text-slate-600"
               />
               <button
                 type="button"
                 onClick={handleUpload}
                 disabled={!fileToUpload || uploading}
-                className="px-4 py-2 rounded-md bg-slate-100 text-slate-900 text-xs font-medium hover:bg-white disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-4 py-2 rounded-lg bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {uploading ? 'Subiendo…' : 'Subir documento'}
               </button>
             </div>
           </div>
 
-          <div className="mt-3 border border-slate-800 rounded-md overflow-hidden">
+          <div className="mt-3 border border-slate-200 rounded-lg overflow-hidden">
             <table className="w-full text-xs">
-              <thead className="bg-slate-900/80 text-slate-400">
+              <thead className="bg-slate-50 text-slate-500">
                 <tr>
                   <th className="px-3 py-2 text-left font-medium">Tipo</th>
                   <th className="px-3 py-2 text-left font-medium">
@@ -965,15 +985,15 @@ export default function CaseDetailPage() {
                   return (
                     <tr
                       key={f.id}
-                      className="border-t border-slate-800 hover:bg-slate-900/50"
+                      className="border-t border-slate-200 hover:bg-slate-50"
                     >
-                      <td className="px-3 py-2 text-slate-100">
+                      <td className="px-3 py-2 text-slate-900">
                         {tipoLabel}
                       </td>
-                      <td className="px-3 py-2 text-slate-100 break-all">
+                      <td className="px-3 py-2 text-slate-900 break-all">
                         {f.nombre_archivo}
                       </td>
-                      <td className="px-3 py-2 text-slate-400">
+                      <td className="px-3 py-2 text-slate-500">
                         {f.created_at
                           ? new Date(f.created_at).toLocaleString('es-ES')
                           : '-'}
@@ -982,7 +1002,7 @@ export default function CaseDetailPage() {
                         <button
                           type="button"
                           onClick={() => handleDownload(f)}
-                          className="text-emerald-400 hover:underline"
+                          className="text-emerald-600 hover:underline"
                         >
                           Descargar
                         </button>
@@ -996,21 +1016,21 @@ export default function CaseDetailPage() {
         </section>
 
         {/* CHECKLIST DOCUMENTAL */}
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
+        <section className="rounded-xl bg-white border border-slate-200 p-4 sm:p-5 shadow-sm space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div>
-              <h2 className="text-sm font-semibold text-slate-200">
+              <h2 className="text-sm font-semibold text-slate-900">
                 Checklist de documentación para el estudio
               </h2>
-              <p className="text-xs text-slate-400">
+              <p className="text-xs text-slate-500">
                 Documentos que necesita este expediente según el tipo de
                 cliente. No se muestra al cliente.
               </p>
             </div>
             <div className="text-right">
-              <p className="text-xs text-slate-300">
+              <p className="text-xs text-slate-600">
                 Completados:{' '}
-                <span className="font-semibold text-emerald-400">
+                <span className="font-semibold text-emerald-600">
                   {completados}/{totalDocs}
                 </span>
               </p>
@@ -1018,7 +1038,7 @@ export default function CaseDetailPage() {
           </div>
 
           {checklistLoading && (
-            <div className="text-xs text-slate-400">
+            <div className="text-xs text-slate-500">
               Cargando checklist de documentación…
             </div>
           )}
@@ -1044,19 +1064,19 @@ export default function CaseDetailPage() {
                     key={item.id}
                     className={`rounded-lg border px-3 py-3 text-xs flex flex-col gap-2 ${
                       item.completado
-                        ? 'border-emerald-600 bg-emerald-950/30'
+                        ? 'border-emerald-200 bg-emerald-50'
                         : obligatorio
-                        ? 'border-slate-700 bg-slate-900'
-                        : 'border-slate-800 bg-slate-950/60'
+                        ? 'border-slate-200 bg-slate-50'
+                        : 'border-slate-200 bg-white'
                     }`}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="text-slate-100 font-medium">
+                        <p className="text-slate-900 font-medium">
                           {nombreDoc}
                         </p>
                         {item.completado_en && (
-                          <p className="text-[10px] text-slate-400 mt-1">
+                          <p className="text-[10px] text-slate-500 mt-1">
                             Marcado como completo el{' '}
                             {new Date(
                               item.completado_en
@@ -1068,8 +1088,8 @@ export default function CaseDetailPage() {
                         <span
                           className={`px-2 py-0.5 rounded-full text-[10px] border ${
                             obligatorio
-                              ? 'border-amber-400 text-amber-200 bg-amber-500/10'
-                              : 'border-slate-500 text-slate-300 bg-slate-800/60'
+                              ? 'border-amber-300 text-amber-700 bg-amber-50'
+                              : 'border-slate-300 text-slate-600 bg-slate-50'
                           }`}
                         >
                           {obligatorio ? 'Obligatorio' : 'Opcional'}
@@ -1077,8 +1097,8 @@ export default function CaseDetailPage() {
                         <span
                           className={`px-2 py-0.5 rounded-full text-[10px] border ${
                             item.completado
-                              ? 'border-emerald-400 text-emerald-200 bg-emerald-600/10'
-                              : 'border-slate-500 text-slate-300 bg-slate-800/60'
+                              ? 'border-emerald-300 text-emerald-700 bg-emerald-50'
+                              : 'border-slate-300 text-slate-600 bg-slate-50'
                           }`}
                         >
                           {item.completado ? 'Completado' : 'Pendiente'}
@@ -1092,8 +1112,8 @@ export default function CaseDetailPage() {
                         onClick={() => handleToggleChecklist(item)}
                         className={`px-3 py-1.5 rounded-md text-[11px] font-medium border ${
                           item.completado
-                            ? 'border-slate-600 text-slate-200 bg-slate-900 hover:bg-slate-800'
-                            : 'border-emerald-500 text-emerald-100 bg-emerald-600/20 hover:bg-emerald-500/30'
+                            ? 'border-slate-300 text-slate-700 bg-white hover:bg-slate-50'
+                            : 'border-emerald-500 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
                         }`}
                       >
                         {item.completado
@@ -1109,49 +1129,49 @@ export default function CaseDetailPage() {
         </section>
 
         {/* ENLACE SEGUIMIENTO */}
-        <section className="rounded-lg border border-emerald-700 bg-emerald-950/40 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-emerald-200">
+        <section className="rounded-xl bg-emerald-50 border border-emerald-200 p-4 sm:p-5 shadow-sm space-y-3">
+          <h2 className="text-sm font-semibold text-emerald-900">
             Enlace de seguimiento para el cliente
           </h2>
           {caso.seguimiento_token ? (
             <>
-              <p className="text-xs text-emerald-200/80">
+              <p className="text-xs text-emerald-800/80">
                 Copia este enlace o pulsa “Ver como cliente” para verlo tal y
                 como lo ve el cliente.
               </p>
-              <div className="bg-slate-950 border border-emerald-700/70 rounded-md px-3 py-2 text-xs break-all text-emerald-100">
+              <div className="bg-white border border-emerald-200 rounded-md px-3 py-2 text-xs break-all text-emerald-900">
                 {trackingUrl}
               </div>
               <div className="flex flex-wrap gap-2 pt-1">
                 <button
                   type="button"
                   onClick={handleCopyLink}
-                  className="px-3 py-1.5 rounded-md border border-emerald-600 text-xs text-emerald-100 hover:bg-emerald-600/20"
+                  className="px-3 py-1.5 rounded-md border border-emerald-300 text-xs text-emerald-800 bg-white hover:bg-emerald-50"
                 >
                   Copiar enlace
                 </button>
                 <Link
                   href={`/seguimiento/${caso.seguimiento_token}`}
                   target="_blank"
-                  className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-medium text-slate-950 shadow-sm hover:bg-emerald-400"
+                  className="inline-flex items-center rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm hover:bg-emerald-500"
                 >
                   Ver como cliente
                 </Link>
               </div>
             </>
           ) : (
-            <p className="text-xs text-emerald-200/80">
+            <p className="text-xs text-emerald-800/80">
               Aún no hay enlace de seguimiento generado para este expediente.
             </p>
           )}
         </section>
 
         {/* HISTORIAL */}
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-slate-200">
+        <section className="rounded-xl bg-white border border-slate-200 p-4 sm:p-5 shadow-sm space-y-3">
+          <h2 className="text-sm font-semibold text-slate-900">
             Historial del expediente (solo interno)
           </h2>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-500">
             Aquí se registran automáticamente los cambios de estado, progreso,
             notas y documentación. No es visible para el cliente.
           </p>
@@ -1165,11 +1185,11 @@ export default function CaseDetailPage() {
               {logs.map((log) => (
                 <li
                   key={log.id}
-                  className="flex gap-3 border-b border-slate-800 pb-2 last:border-b-0 last:pb-0"
+                  className="flex gap-3 border-b border-slate-100 pb-2 last:border-b-0 last:pb-0"
                 >
                   <div className="mt-0.5 h-2 w-2 rounded-full bg-emerald-500" />
                   <div>
-                    <div className="text-slate-300">
+                    <div className="text-slate-800">
                       {log.descripcion || log.tipo}
                     </div>
                     <div className="text-[10px] text-slate-500 mt-0.5">
@@ -1186,11 +1206,11 @@ export default function CaseDetailPage() {
         </section>
 
         {/* NOTAS INTERNAS */}
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-slate-200">
+        <section className="rounded-xl bg-white border border-slate-200 p-4 sm:p-5 shadow-sm space-y-3 mb-4">
+          <h2 className="text-sm font-semibold text-slate-900">
             Notas internas del gestor
           </h2>
-          <p className="text-xs text-slate-400">
+          <p className="text-xs text-slate-500">
             Conversación interna sobre el expediente. Sólo la ves tú y tu
             equipo, nunca el cliente.
           </p>
@@ -1205,7 +1225,7 @@ export default function CaseDetailPage() {
             {notasLista.map((nota) => (
               <div
                 key={nota.id}
-                className="rounded-md bg-slate-800/60 px-3 py-2 text-xs text-slate-100"
+                className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-900 border border-slate-100"
               >
                 <p>{nota.contenido}</p>
                 <p className="text-[10px] text-slate-500 mt-1">
@@ -1215,19 +1235,19 @@ export default function CaseDetailPage() {
             ))}
           </div>
 
-          <div className="flex gap-2 pt-1">
+          <div className="flex flex-col sm:flex-row gap-2 pt-1">
             <input
               type="text"
               value={nuevaNota}
               onChange={(e) => setNuevaNota(e.target.value)}
               placeholder="Escribe una nota interna…"
-              className="flex-1 rounded-md bg-slate-950 border border-slate-700 px-3 py-2 text-xs text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="flex-1 rounded-lg bg-white border border-slate-300 px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
             <button
               type="button"
               onClick={handleAddNota}
               disabled={!nuevaNota.trim()}
-              className="px-4 py-2 rounded-md bg-emerald-500 text-xs font-medium text-slate-950 hover:bg-emerald-400 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="px-4 py-2 rounded-lg bg-emerald-600 text-xs font-medium text-white hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Añadir nota
             </button>
