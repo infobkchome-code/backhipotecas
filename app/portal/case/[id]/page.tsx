@@ -257,9 +257,7 @@ export default function CaseDetailPage() {
 
     if (docsError) {
       console.error('Error cargando documentos_requeridos:', docsError);
-      setChecklistError(
-        'No se pudo generar el checklist de documentación.'
-      );
+      setChecklistError('No se pudo generar el checklist de documentación.');
       setChecklistLoading(false);
       return;
     }
@@ -277,9 +275,7 @@ export default function CaseDetailPage() {
 
       if (insertError) {
         console.error('Error creando checklist:', insertError);
-        setChecklistError(
-          'No se pudo crear el checklist de documentación.'
-        );
+        setChecklistError('No se pudo crear el checklist de documentación.');
         setChecklistLoading(false);
         return;
       }
@@ -352,50 +348,63 @@ export default function CaseDetailPage() {
           ? {
               ...c,
               completado: nuevoEstado,
-              completado_en: nuevoEstado
-                ? new Date().toISOString()
-                : null,
+              completado_en: nuevoEstado ? new Date().toISOString() : null,
             }
           : c
       )
     );
   };
 
-  // -------- cargar caso, logs, notas, checklist --------
+  // -------- cargar caso, logs, notas, checklist (SIN exigir login) --------
   useEffect(() => {
-    const fetchCaseData = async () => {
+    const load = async () => {
       setLoading(true);
       setErrorMsg(null);
-      setSuccessMsg(null);
 
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser();
+      const idParam = id;
 
-      if (userError || !user) {
-        setErrorMsg('Debes iniciar sesión para ver este expediente.');
+      if (!idParam) {
+        setErrorMsg('No se ha encontrado el ID del expediente.');
         setLoading(false);
         return;
       }
 
-      setUserId(user.id);
+      // Intentamos obtener usuario pero no bloqueamos si no hay sesión
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        setUserId(user?.id ?? null);
+      } catch (_) {
+        setUserId(null);
+      }
 
-      const { data: casoData, error: casoError } = await supabase
+      const { data, error } = await supabase
         .from('casos')
-        .select('*')
-        .eq('id', id)
-        .eq('user_id', user.id)
+        .select(`
+          id,
+          titulo,
+          estado,
+          progreso,
+          notas,
+          urgente,
+          fecha_limite,
+          created_at,
+          updated_at,
+          tipo_cliente,
+          seguimiento_token
+        `)
+        .eq('id', idParam)
         .single();
 
-      if (casoError || !casoData) {
-        console.error(casoError);
-        setErrorMsg('No se ha encontrado el expediente.');
+      if (error || !data) {
+        console.error('Error cargando expediente:', error);
+        setErrorMsg('No se ha podido cargar el expediente.');
         setLoading(false);
         return;
       }
 
-      const c = casoData as any;
+      const c = data as any;
       const tipoClienteNorm = c.tipo_cliente ?? 'cuenta_ajena';
 
       const casoNormalizado: Caso = {
@@ -444,7 +453,7 @@ export default function CaseDetailPage() {
       setLoading(false);
     };
 
-    if (id) fetchCaseData();
+    if (id) load();
   }, [id]);
 
   // -------- cargar documentos --------
@@ -542,7 +551,6 @@ export default function CaseDetailPage() {
     setDocsMsg(null);
 
     try {
-      // 1) Nombre seguro
       let safeName = fileToUpload.name
         .normalize('NFD')
         .replace(/[\u0300-\u036f]/g, '')
@@ -551,7 +559,6 @@ export default function CaseDetailPage() {
 
       const path = `${userId}/${caso.id}/${safeName}`;
 
-      // 2) Subir a Storage
       const { error: uploadError } = await supabase.storage
         .from('docs')
         .upload(path, fileToUpload, { upsert: true });
@@ -567,13 +574,12 @@ export default function CaseDetailPage() {
         return;
       }
 
-      // 3) Guardar metadatos en expediente_documentos
       const { data: docInsert, error: docError } = await supabase
         .from('expediente_documentos')
         .insert({
           caso_id: caso.id,
           user_id: userId,
-          tipo: docTipo, // 👈 importante para saber qué marcar
+          tipo: docTipo,
           nombre_archivo: safeName,
           storage_path: path,
         })
@@ -592,7 +598,6 @@ export default function CaseDetailPage() {
 
       setFileToUpload(null);
 
-      // 4) Crear log de movimiento
       const { error: logError } = await supabase.from('expediente_logs').insert({
         caso_id: caso.id,
         user_id: userId,
@@ -615,7 +620,6 @@ export default function CaseDetailPage() {
         }
       }
 
-      // 5) 🔥 Marcar checklist automáticamente según el tipo subido
       const itemsToMark = checklist.filter(
         (item) => item.doc?.tipo === docTipo && !item.completado
       );
@@ -631,25 +635,21 @@ export default function CaseDetailPage() {
     }
   };
 
- const handleDownload = (file: FileItem) => {
-  if (!file?.storage_path) {
-    setDocsMsg('Ruta de archivo no válida.');
-    return;
-  }
+  const handleDownload = (file: FileItem) => {
+    if (!file?.storage_path) {
+      setDocsMsg('Ruta de archivo no válida.');
+      return;
+    }
 
-  const { data } = supabase.storage
-    .from('docs')
-    .getPublicUrl(file.storage_path);
+    const { data } = supabase.storage.from('docs').getPublicUrl(file.storage_path);
 
-  if (!data?.publicUrl) {
-    setDocsMsg('No se pudo generar la URL de descarga.');
-    return;
-  }
+    if (!data?.publicUrl) {
+      setDocsMsg('No se pudo generar la URL de descarga.');
+      return;
+    }
 
-  // Abrir el documento en una pestaña nueva
-  window.open(data.publicUrl, '_blank');
-};
-
+    window.open(data.publicUrl, '_blank');
+  };
 
   const handleAddNota = async () => {
     if (!nuevaNota.trim() || !caso) return;
@@ -715,13 +715,9 @@ export default function CaseDetailPage() {
       <div className="min-h-screen bg-slate-950 text-slate-50 flex flex-col items-center justify-center px-4">
         <p className="text-lg font-semibold mb-2">Expediente no encontrado</p>
         <p className="text-sm text-slate-400 mb-4">
-          Puede que el enlace no sea correcto o que no tengas permisos sobre
-          este expediente.
+          Puede que el enlace no sea correcto o que no tengas permisos sobre este expediente.
         </p>
-        <Link
-          href="/portal"
-          className="text-emerald-400 text-sm hover:underline"
-        >
+        <Link href="/portal" className="text-emerald-400 text-sm hover:underline">
           ← Volver al panel de clientes
         </Link>
       </div>
@@ -737,47 +733,36 @@ export default function CaseDetailPage() {
     ? `${origin}/seguimiento/${caso.seguimiento_token}`
     : '';
 
-  let badgeFechaTexto: string | null = null;
-  if (fechaLimite) {
-    badgeFechaTexto = `Plazo: ${new Date(
-      fechaLimite
-    ).toLocaleDateString('es-ES')}`;
-  }
-
   const totalDocs = checklist.length;
   const completados = checklist.filter((c) => c.completado).length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-50">
- <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
-  <div>
-    {/* VOLVER */}
-    <button
-      onClick={() => router.push('/portal')}
-      className="text-xs text-slate-400 hover:text-slate-200 mb-1"
-    >
-      ← Volver al panel de clientes
-    </button>
+      <header className="border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+        <div>
+          <button
+            onClick={() => router.push('/portal')}
+            className="text-xs text-slate-400 hover:text-slate-200 mb-1"
+          >
+            ← Volver al panel de clientes
+          </button>
 
-    {/* BOTÓN DEL CHAT */}
-    <Link
-      href={`/portal/case/${caso.id}/chat`}
-      className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-medium text-slate-950 shadow-sm hover:bg-emerald-400 mt-2"
-    >
-      💬 Abrir chat con cliente
-    </Link>
+          <Link
+            href={`/portal/case/${caso.id}/chat`}
+            className="inline-flex items-center rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-medium text-slate-950 shadow-sm hover:bg-emerald-400 mt-2"
+          >
+            💬 Abrir chat con cliente
+          </Link>
 
-    {/* TÍTULO */}
-    <h1 className="text-xl font-semibold mt-3">{caso.titulo}</h1>
-    <p className="text-xs text-slate-400">
-      Expediente hipotecario · creado el{' '}
-      {new Date(caso.created_at).toLocaleDateString('es-ES')}
-    </p>
-  </div>
-</header>
+          <h1 className="text-xl font-semibold mt-3">{caso.titulo}</h1>
+          <p className="text-xs text-slate-400">
+            Expediente hipotecario · creado el{' '}
+            {new Date(caso.created_at).toLocaleDateString('es-ES')}
+          </p>
+        </div>
+      </header>
 
       <main className="max-w-4xl mx-auto px-6 py-6 space-y-6">
-        {/* MENSAJES */}
         {errorMsg && (
           <div className="rounded-md border border-red-600 bg-red-950/60 px-4 py-2 text-sm text-red-100">
             {errorMsg}
@@ -975,8 +960,7 @@ export default function CaseDetailPage() {
 
                 {files.map((f) => {
                   const tipoLabel =
-                    DOC_TIPOS.find((t) => t.value === f.tipo)?.label ||
-                    f.tipo;
+                    DOC_TIPOS.find((t) => t.value === f.tipo)?.label || f.tipo;
 
                   return (
                     <tr
