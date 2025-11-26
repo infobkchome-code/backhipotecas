@@ -1,117 +1,106 @@
-"use client";
-import { useState } from "react";
-import { createClient } from "@supabase/supabase-js";
-import { useRouter } from "next/navigation";
+'use client';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+import { FormEvent, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { supabase } from '@/lib/supabaseClient';
 
 export default function LoginPage() {
   const router = useRouter();
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loadingPwd, setLoadingPwd] = useState(false);
-  const [loadingOtp, setLoadingOtp] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const searchParams = useSearchParams();
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Login clásico: email + contraseña
-  const handlePasswordLogin = async (e: React.FormEvent) => {
+  const redirectTo = searchParams.get('redirectTo') || '/portal';
+
+  async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    setMessage(null);
-    setLoadingPwd(true);
-    try {
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) throw error;
-      router.push("/portal"); // ✅ ya dentro
-    } catch (err: any) {
-      setMessage(`❌ ${err.message ?? "No se pudo iniciar sesión"}`);
-    } finally {
-      setLoadingPwd(false);
-    }
-  };
+    setErrorMsg(null);
+    setLoading(true);
 
-  // Alternativa: enviar enlace mágico (OTP) al email
-  const handleSendMagicLink = async () => {
-    setMessage(null);
-    setLoadingOtp(true);
-    try {
-      const { error } = await supabase.auth.signInWithOtp({
-        email,
-        options: {
-          // Tras hacer clic en el mail, vuelve aquí:
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      });
-      if (error) throw error;
-      setMessage("✅ Te enviamos un enlace de acceso a tu email.");
-    } catch (err: any) {
-      setMessage(`❌ ${err.message ?? "No se pudo enviar el enlace"}`);
-    } finally {
-      setLoadingOtp(false);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    setLoading(false);
+
+    if (error || !data.user) {
+      setErrorMsg('Correo o contraseña incorrectos.');
+      return;
     }
-  };
+
+    router.push(redirectTo);
+  }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100 p-4">
-      <div className="bg-white w-full max-w-sm p-8 rounded-2xl shadow-md">
-        <h1 className="text-2xl font-semibold text-center mb-6">Iniciar sesión</h1>
+    <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
+      <div className="w-full max-w-md rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl p-8">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="h-9 w-9 rounded-2xl bg-emerald-500 flex items-center justify-center text-slate-900 font-bold">
+            BKC
+          </div>
+          <div>
+            <div className="text-sm text-emerald-400 font-semibold">
+              BKC Hipotecas
+            </div>
+            <div className="text-lg font-semibold text-white">
+              Acceso al panel
+            </div>
+          </div>
+        </div>
 
-        <form onSubmit={handlePasswordLogin} className="space-y-3">
-          <input
-            type="email"
-            placeholder="Correo electrónico"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            className="w-full border border-gray-300 rounded-lg px-4 py-2"
-          />
+        <p className="text-xs text-slate-300 mb-4">
+          Introduce tu correo y contraseña para acceder al panel interno de expedientes hipotecarios.
+        </p>
 
-          <input
-            type="password"
-            placeholder="Contraseña"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full border border-gray-300 rounded-lg px-4 py-2"
-          />
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-slate-200 mb-1">
+              Correo electrónico
+            </label>
+            <input
+              type="email"
+              required
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400"
+              placeholder="tu@hipotecasbkc.es"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-slate-200 mb-1">
+              Contraseña
+            </label>
+            <input
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none focus:border-emerald-400"
+              placeholder="••••••••"
+            />
+          </div>
+
+          {errorMsg && (
+            <div className="text-xs text-red-400 bg-red-950/50 border border-red-900 rounded-xl px-3 py-2">
+              {errorMsg}
+            </div>
+          )}
 
           <button
             type="submit"
-            disabled={loadingPwd}
-            className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-lg transition"
+            disabled={loading}
+            className="w-full rounded-2xl bg-emerald-500 text-slate-900 text-sm font-semibold py-2.5 mt-2 disabled:opacity-70 flex items-center justify-center gap-2"
           >
-            {loadingPwd ? "Accediendo..." : "Entrar"}
+            {loading ? 'Entrando…' : 'Entrar al panel'}
           </button>
         </form>
 
-        <div className="my-4 h-px bg-gray-200" />
-
-        <button
-          type="button"
-          onClick={handleSendMagicLink}
-          disabled={loadingOtp || !email}
-          className="w-full border border-gray-300 hover:bg-gray-50 text-gray-800 font-medium py-2 rounded-lg transition"
-          title={!email ? "Escribe tu email arriba" : ""}
-        >
-          {loadingOtp ? "Enviando enlace..." : "Entrar con enlace mágico"}
-        </button>
-
-        {message && (
-          <p
-            className={`text-sm text-center mt-4 ${
-              message.startsWith("✅") ? "text-green-600" : "text-red-500"
-            }`}
-          >
-            {message}
-          </p>
-        )}
-
-        <p className="text-center text-sm mt-4 text-gray-600">
-          ¿No tienes cuenta?{" "}
-          <a href="/portal/register" className="text-emerald-700 font-medium underline">
-            Regístrate
-          </a>
+        <p className="mt-4 text-[11px] text-slate-400">
+          Acceso restringido al equipo de BKC Hipotecas.
         </p>
       </div>
     </div>
