@@ -13,19 +13,28 @@ export default function PortalLayout({ children }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const [checking, setChecking] = useState(true);
+  const [sessionChecked, setSessionChecked] = useState(false);
 
   useEffect(() => {
     const checkSession = async () => {
-      const { data, error } = await supabase.auth.getUser();
-      if (error || !data.user) {
-        const redirectTo = pathname || '/portal';
-        router.replace(`/login?redirectTo=${encodeURIComponent(redirectTo)}`);
-      } else {
+      try {
+        const { data, error } = await supabase.auth.getUser();
+
+        if (error || !data.user) {
+          const redirectTo = pathname || '/portal';
+          router.replace(`/login?redirectTo=${encodeURIComponent(redirectTo)}`);
+        } else {
+          setSessionChecked(true);
+        }
+      } catch (e) {
+        router.replace('/login');
+      } finally {
         setChecking(false);
       }
     };
+
     checkSession();
-  }, [router, pathname]);
+  }, [pathname, router]);
 
   async function handleLogout() {
     await supabase.auth.signOut();
@@ -38,6 +47,11 @@ export default function PortalLayout({ children }: Props) {
         Comprobando sesión…
       </div>
     );
+  }
+
+  // Fallback extra de seguridad
+  if (!sessionChecked) {
+    return null;
   }
 
   const isPortalRoot = pathname === '/portal';
@@ -68,6 +82,7 @@ export default function PortalLayout({ children }: Props) {
             <span className="h-2 w-2 rounded-full bg-emerald-400" />
             Expedientes
           </Link>
+
           <Link
             href="/portal/new"
             className={`flex items-center gap-2 rounded-xl px-3 py-2 ${
