@@ -1,97 +1,114 @@
-import type { ReactNode } from 'react';
-import Link from 'next/link';
+'use client';
 
-export default function PortalLayout({ children }: { children: ReactNode }) {
+import { ReactNode, useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { supabase } from '@/lib/supabaseClient';
+
+type Props = {
+  children: ReactNode;
+};
+
+export default function PortalLayout({ children }: Props) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const [checking, setChecking] = useState(true);
+
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data, error } = await supabase.auth.getUser();
+      if (error || !data.user) {
+        const redirectTo = pathname || '/portal';
+        router.replace(`/login?redirectTo=${encodeURIComponent(redirectTo)}`);
+      } else {
+        setChecking(false);
+      }
+    };
+    checkSession();
+  }, [router, pathname]);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.replace('/login');
+  }
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-200 text-sm">
+        Comprobando sesión…
+      </div>
+    );
+  }
+
+  const isPortalRoot = pathname === '/portal';
+
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex">
-      {/* SIDEBAR - solo visible en escritorio/tablet */}
-      <aside className="hidden md:flex md:flex-col w-64 bg-slate-950 text-slate-50 border-r border-slate-800">
-        {/* Logo y título */}
-        <div className="px-5 py-4 border-b border-slate-800 flex items-center gap-2">
-          <div className="h-9 w-9 rounded-xl bg-emerald-500 flex items-center justify-center text-sm font-bold text-slate-950">
+    <div className="min-h-screen flex bg-slate-950 text-slate-100">
+      {/* Sidebar */}
+      <aside className="w-64 bg-slate-950 border-r border-slate-800 flex flex-col">
+        <div className="px-5 py-4 border-b border-slate-800 flex items-center gap-3">
+          <div className="h-9 w-9 rounded-2xl bg-emerald-500 flex items-center justify-center text-slate-900 font-bold">
             BKC
           </div>
-          <div>
-            <p className="text-sm font-semibold">BKC Hipotecas</p>
-            <p className="text-xs text-slate-400">Panel interno</p>
+          <div className="leading-tight">
+            <div className="text-xs text-slate-400">Panel interno</div>
+            <div className="text-sm font-semibold">BKC Hipotecas</div>
           </div>
         </div>
 
-        {/* Navegación */}
         <nav className="flex-1 px-3 py-4 space-y-1 text-sm">
           <Link
             href="/portal"
-            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-slate-900 text-slate-50 border border-slate-700"
+            className={`flex items-center gap-2 rounded-xl px-3 py-2 ${
+              isPortalRoot
+                ? 'bg-emerald-500/10 text-emerald-300'
+                : 'text-slate-200 hover:bg-slate-800/70'
+            }`}
           >
-            <span className="text-xs">📂</span>
-            <span>Expedientes</span>
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            Expedientes
           </Link>
-
           <Link
-            href="/portal/clients/new"
-            className="flex items-center gap-2 px-3 py-2 rounded-lg text-slate-200 hover:bg-slate-900/70 hover:border-slate-700 border border-transparent"
+            href="/portal/new"
+            className={`flex items-center gap-2 rounded-xl px-3 py-2 ${
+              pathname?.startsWith('/portal/new')
+                ? 'bg-emerald-500/10 text-emerald-300'
+                : 'text-slate-200 hover:bg-slate-800/70'
+            }`}
           >
-            <span className="text-xs">➕</span>
-            <span>Nuevo expediente</span>
+            <span className="h-2 w-2 rounded-full bg-sky-400" />
+            Nuevo expediente
           </Link>
         </nav>
 
-        {/* Pie: usuario / info */}
-        <div className="px-4 py-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-          <div>
-            <p className="font-medium text-slate-200">Nahuel</p>
-            <p className="text-[11px]">Gestor de hipotecas</p>
-          </div>
-          <div className="h-8 w-8 rounded-full bg-slate-800 flex items-center justify-center text-xs font-semibold">
-            N
-          </div>
+        <button
+          onClick={handleLogout}
+          className="m-3 mb-4 text-xs text-slate-300 rounded-xl border border-slate-700 px-3 py-2 hover:bg-slate-800/80"
+        >
+          Cerrar sesión
+        </button>
+
+        <div className="px-4 pb-4 text-[11px] text-slate-500">
+          Lunes a viernes · 9:30–20:30
         </div>
       </aside>
 
-      {/* CONTENIDO PRINCIPAL */}
-      <div className="flex-1 flex flex-col">
-        {/* TOPBAR (visible también en móvil) */}
-        <header className="sticky top-0 z-20 bg-white/80 backdrop-blur border-b border-slate-200 px-4 py-3 md:px-6 flex items-center justify-between">
-          {/* Móvil: logo simple */}
-          <div className="flex items-center gap-2 md:hidden">
-            <div className="h-8 w-8 rounded-lg bg-emerald-500 flex items-center justify-center text-xs font-bold text-slate-950">
-              BKC
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-slate-900">
-                BKC Hipotecas
-              </p>
-              <p className="text-[11px] text-slate-500">
-                Panel de expedientes
-              </p>
-            </div>
-          </div>
-
-          {/* Escritorio: título genérico */}
-          <div className="hidden md:flex flex-col">
-            <span className="text-xs uppercase tracking-wide text-slate-400">
-              Panel de gestión
-            </span>
-            <span className="text-sm font-semibold text-slate-900">
+      {/* Main */}
+      <main className="flex-1 bg-slate-950">
+        <header className="border-b border-slate-800 px-8 py-4 flex items-center justify-between">
+          <div>
+            <div className="text-xs text-slate-400">PANEL DE GESTIÓN</div>
+            <div className="text-lg font-semibold text-slate-50">
               Expedientes hipotecarios
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <span className="hidden md:inline text-xs text-slate-500">
-              Lunes a viernes · 9:30–20:30
-            </span>
-            <div className="h-8 w-8 rounded-full bg-slate-900 text-slate-100 flex items-center justify-center text-xs font-semibold md:hidden">
-              N
             </div>
+          </div>
+          <div className="text-xs text-slate-400">
+            Lunes a viernes · 9:30–20:30
           </div>
         </header>
 
-        {/* CONTENIDO DE CADA PÁGINA DEL PORTAL */}
-        <main className="flex-1 px-4 py-4 md:px-6 md:py-6">
-          {children}
-        </main>
-      </div>
+        <div className="px-6 py-6">{children}</div>
+      </main>
     </div>
   );
 }
