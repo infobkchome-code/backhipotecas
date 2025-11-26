@@ -1,28 +1,27 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
-export default function LoginPage() {
+export default function LoginPage({ searchParams }: { searchParams?: { redirectTo?: string } }) {
   const router = useRouter();
-  const params = useSearchParams();
-  const redirectTo = params.get('redirectTo') || '/portal';
+  const redirectTo = searchParams?.redirectTo || '/portal';
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // Si ya hay sesión → no mostrar login
+  // Si ya hay sesión → no mostrar el login
   useEffect(() => {
-    const checkSession = async () => {
+    const check = async () => {
       const { data } = await supabase.auth.getUser();
       if (data?.user) {
         router.replace(redirectTo);
       }
     };
-    checkSession();
+    check();
   }, [router, redirectTo]);
 
   async function handleLogin(e: React.FormEvent) {
