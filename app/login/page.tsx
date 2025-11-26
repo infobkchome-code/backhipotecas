@@ -1,22 +1,33 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function LoginPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const params = useSearchParams();
+  const redirectTo = params.get('redirectTo') || '/portal';
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const redirectTo = searchParams.get('redirectTo') || '/portal';
+  // Si ya hay sesión → no mostrar login
+  useEffect(() => {
+    const checkSession = async () => {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user) {
+        router.replace(redirectTo);
+      }
+    };
+    checkSession();
+  }, [router, redirectTo]);
 
-  async function handleSubmit(e: FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    setErrorMsg(null);
+    setError(null);
     setLoading(true);
 
     const { data, error } = await supabase.auth.signInWithPassword({
@@ -26,8 +37,8 @@ export default function LoginPage() {
 
     setLoading(false);
 
-    if (error || !data.user) {
-      setErrorMsg('Correo o contraseña incorrectos.');
+    if (error || !data?.user) {
+      setError('Correo o contraseña incorrectos');
       return;
     }
 
@@ -36,57 +47,43 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-slate-950 flex items-center justify-center px-4">
-      <div className="w-full max-w-md rounded-3xl bg-slate-900/90 border border-slate-800 shadow-xl p-8">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="h-9 w-9 rounded-2xl bg-emerald-500 flex items-center justify-center text-slate-900 font-bold">
-            BKC
-          </div>
-          <div>
-            <div className="text-sm text-emerald-400 font-semibold">
-              BKC Hipotecas
-            </div>
-            <div className="text-lg font-semibold text-white">
-              Acceso al panel
-            </div>
-          </div>
-        </div>
+      <div className="w-full max-w-md rounded-3xl bg-slate-900 border border-slate-800 shadow-xl p-8">
+        <h1 className="text-xl font-bold text-emerald-400 mb-4">BKC Hipotecas</h1>
+        <p className="text-sm text-slate-300 mb-4">Acceso al panel interno</p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleLogin} className="space-y-4">
           <input
             type="email"
-            required
             placeholder="Correo electrónico"
-            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+            className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
             value={email}
             onChange={e => setEmail(e.target.value)}
+            required
           />
 
           <input
             type="password"
-            required
             placeholder="Contraseña"
-            className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white"
+            className="w-full rounded-xl border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-white"
             value={password}
             onChange={e => setPassword(e.target.value)}
+            required
           />
 
-          {errorMsg && (
-            <div className="text-xs text-red-400 bg-red-950/50 border border-red-800 rounded-xl px-3 py-2">
-              {errorMsg}
+          {error && (
+            <div className="text-xs text-red-400 bg-red-950 border border-red-800 rounded-xl px-2 py-1">
+              {error}
             </div>
           )}
 
           <button
+            type="submit"
             disabled={loading}
-            className="w-full rounded-2xl bg-emerald-500 text-slate-900 text-sm font-semibold py-2.5"
+            className="w-full rounded-2xl bg-emerald-500 text-slate-900 text-sm font-semibold py-2"
           >
-            {loading ? 'Entrando...' : 'Entrar al panel'}
+            {loading ? 'Entrando...' : 'Entrar'}
           </button>
         </form>
-
-        <p className="mt-4 text-[11px] text-slate-400 text-center">
-          Acceso restringido · BKC Hipotecas
-        </p>
       </div>
     </div>
   );
