@@ -526,7 +526,7 @@ export default function CaseDetailPage() {
 
       const { data: logsData, error: logsError } = await supabase
         .from('expediente_logs')
-        .select('id, created_at, tipo, descripcion, visible_cliente')
+        .select('*')
         .eq('caso_id', c.id)
         .order('created_at', { ascending: false });
 
@@ -536,7 +536,7 @@ export default function CaseDetailPage() {
 
       const { data: notasData, error: notasError } = await supabase
         .from('expediente_notas')
-        .select('id, contenido, created_at, user_id')
+        .select('*')
         .eq('caso_id', c.id)
         .order('created_at', { ascending: true });
 
@@ -559,7 +559,7 @@ export default function CaseDetailPage() {
 
       const { data, error } = await supabase
         .from('expediente_documentos')
-        .select('id, tipo, nombre_archivo, storage_path, created_at')
+        .select('*')
         .eq('caso_id', id)
         .order('created_at', { ascending: false });
 
