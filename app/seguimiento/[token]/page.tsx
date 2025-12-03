@@ -90,9 +90,15 @@ export default function SeguimientoPage() {
   const [uploadOk, setUploadOk] = useState<string | null>(null);
 
   // 🔒 control local: qué documentos ya se han subido en esta sesión
-  const [uploadedDocsLocal, setUploadedDocsLocal] = useState<
-    Record<string, boolean>
-  >({});
+  const [uploadedDocsLocal, setUploadedDocsLocal] = useState<Record<string, boolean>>({});
+
+  // ---------------- ESTILOS BASE (visual portal) ----------------
+  const pageWrap = 'min-h-screen bg-slate-100 text-slate-900';
+  const container = 'max-w-4xl mx-auto px-6 py-10 space-y-6';
+  const card = 'bg-white border border-slate-200 rounded-2xl shadow-sm p-5';
+  const cardTitle = 'text-sm font-semibold text-slate-900';
+  const muted = 'text-slate-600';
+  const subtle = 'text-slate-500';
 
   // -------------- CARGAR DATOS DEL CASO + DOCS ----------------
   useEffect(() => {
@@ -112,9 +118,7 @@ export default function SeguimientoPage() {
         const json: ApiSeguimientoResponse = await res.json();
 
         if (!res.ok || !json.data) {
-          setErrorMsg(
-            'No hemos encontrado ningún expediente asociado a este enlace.'
-          );
+          setErrorMsg('No hemos encontrado ningún expediente asociado a este enlace.');
           setLoading(false);
           return;
         }
@@ -122,7 +126,7 @@ export default function SeguimientoPage() {
         setCaso(json.data);
         setLogs(json.logs ?? []);
         setDocs(json.docs ?? []);
-      } catch (err) {
+      } catch {
         setErrorMsg('Error inesperado al cargar el expediente.');
       } finally {
         setLoading(false);
@@ -220,23 +224,13 @@ export default function SeguimientoPage() {
           setMensajes((prev) => [...prev, json.mensaje]);
         }
 
-        // ✅ Marcamos este documento como subido:
-        //   1) Local, para la sesión actual
-        setUploadedDocsLocal((prev) => ({
-          ...prev,
-          [doc.id]: true,
-        }));
+        setUploadedDocsLocal((prev) => ({ ...prev, [doc.id]: true }));
 
-        //   2) Y también en el array de docs (para que se vea “Enviado” sin recargar)
-        setDocs((prev) =>
-          prev.map((d) =>
-            d.id === doc.id ? { ...d, ya_subido: true } : d
-          )
-        );
+        setDocs((prev) => prev.map((d) => (d.id === doc.id ? { ...d, ya_subido: true } : d)));
 
         setUploadOk(`Se ha subido correctamente: "${doc.titulo}".`);
         setTimeout(() => setUploadOk(null), 4000);
-      } catch (err) {
+      } catch {
         setUploadError('No se ha podido subir el archivo.');
       } finally {
         setUploadingDocId(null);
@@ -247,18 +241,18 @@ export default function SeguimientoPage() {
   // ------------------ RENDER ---------------------------
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
-        Cargando expediente…
+      <div className={`${pageWrap} flex items-center justify-center`}>
+        <div className="text-sm text-slate-600">Cargando expediente…</div>
       </div>
     );
   }
 
   if (errorMsg || !caso) {
     return (
-      <div className="min-h-screen bg-slate-950 text-slate-50 flex items-center justify-center">
-        <div className="text-center space-y-3 px-4">
-          <h1 className="text-lg font-semibold">Enlace de seguimiento no válido</h1>
-          <p className="text-sm text-slate-400">{errorMsg}</p>
+      <div className={`${pageWrap} flex items-center justify-center`}>
+        <div className="text-center space-y-2 px-4">
+          <h1 className="text-lg font-semibold text-slate-900">Enlace de seguimiento no válido</h1>
+          <p className="text-sm text-slate-600">{errorMsg}</p>
         </div>
       </div>
     );
@@ -267,140 +261,123 @@ export default function SeguimientoPage() {
   const estadoLabel = ESTADO_LABEL[caso.estado] ?? 'En curso';
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-50">
-      <main className="max-w-2xl mx-auto px-6 py-10 space-y-6">
+    <div className={pageWrap}>
+      <main className={container}>
         {/* ---------------- CABECERA ---------------- */}
         <header className="space-y-2">
-          <p className="text-xs uppercase tracking-wide text-emerald-400">
+          <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
             Seguimiento de expediente hipotecario
           </p>
-          <h1 className="text-2xl font-semibold">{caso.titulo}</h1>
-          <p className="text-xs text-slate-400">
+          <h1 className="text-2xl font-semibold text-slate-900">{caso.titulo}</h1>
+          <p className="text-xs text-slate-500">
             Creado el {new Date(caso.created_at).toLocaleDateString('es-ES')}
           </p>
         </header>
 
         {/* ---------------- ESTADO ---------------- */}
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-4">
-          <div className="flex justify-between gap-3">
+        <section className={`${card} space-y-4`}>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
             <div>
-              <p className="text-xs text-slate-400 mb-1">Estado actual</p>
-              <span className="bg-emerald-500/10 text-emerald-300 px-3 py-1 rounded-full text-xs">
+              <p className={`text-xs ${subtle} mb-1`}>Estado actual</p>
+              <span className="inline-flex items-center bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-1 rounded-full text-xs font-medium">
                 {estadoLabel}
               </span>
             </div>
-            <p className="text-[11px] text-slate-500 text-right">
-              Última actualización:{' '}
-              {new Date(caso.updated_at).toLocaleString('es-ES')}
+            <p className="text-[11px] text-slate-500 sm:text-right">
+              Última actualización: {new Date(caso.updated_at).toLocaleString('es-ES')}
             </p>
           </div>
 
-          <p className="text-xs text-slate-400 mb-1">
-            Avance aproximado del expediente
-          </p>
-          <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden">
-            <div
-              className="h-2 bg-emerald-500 transition-all"
-              style={{ width: `${caso.progreso}%` }}
-            />
+          <div className="space-y-2">
+            <p className={`text-xs ${subtle}`}>Avance aproximado del expediente</p>
+            <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
+              <div
+                className="h-2 bg-emerald-600 transition-all"
+                style={{ width: `${caso.progreso}%` }}
+              />
+            </div>
+            <p className="text-xs text-slate-700">{caso.progreso}% completado</p>
           </div>
-          <p className="text-xs text-slate-300 mt-1">
-            {caso.progreso}% completado
-          </p>
 
           {caso.notas && (
-            <div className="mt-2">
-              <p className="text-xs text-slate-400 mb-1">
-                Comentarios de tu gestor
-              </p>
-              <p className="text-sm text-slate-100 whitespace-pre-wrap">
-                {caso.notas}
-              </p>
+            <div className="pt-2 border-t border-slate-200">
+              <p className={`text-xs ${subtle} mb-1`}>Comentarios de tu gestor</p>
+              <p className="text-sm text-slate-900 whitespace-pre-wrap">{caso.notas}</p>
             </div>
           )}
         </section>
 
         {/* --------------- SUBIDA DOCUMENTOS ---------------- */}
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-slate-200">
-            Documentación para el estudio
-          </h2>
+        <section className={`${card} space-y-3`}>
+          <h2 className={cardTitle}>Documentación para el estudio</h2>
 
           {docs.length === 0 && (
-            <p className="text-xs text-slate-500">
+            <p className={`text-xs ${subtle}`}>
               De momento no hay documentación que tengas que subir por aquí.
             </p>
           )}
 
           {docs.length > 0 && (
             <>
-              <p className="text-xs text-slate-400">
-                Sube aquí la documentación necesaria para tu hipoteca. Cada tipo de
-                documento solo se puede enviar una vez.
+              <p className={`text-xs ${muted}`}>
+                Sube aquí la documentación necesaria para tu hipoteca. Cada tipo de documento solo se puede
+                enviar una vez.
               </p>
 
               {uploadError && (
-                <div className="text-red-200 text-xs bg-red-900/40 p-2 rounded-md border border-red-700">
+                <div className="text-red-700 text-xs bg-red-50 p-3 rounded-xl border border-red-200">
                   {uploadError}
                 </div>
               )}
 
               {uploadOk && (
-                <div className="text-emerald-200 text-xs bg-emerald-900/40 p-2 rounded-md border border-emerald-700">
+                <div className="text-emerald-700 text-xs bg-emerald-50 p-3 rounded-xl border border-emerald-200">
                   {uploadOk}
                 </div>
               )}
 
-              <div className="divide-y divide-slate-800 rounded-md border border-slate-800 bg-slate-950/40">
+              <div className="divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white">
                 {docs.map((doc) => {
                   const yaSubido = doc.ya_subido || uploadedDocsLocal[doc.id];
                   const disabled = uploadingDocId === doc.id || yaSubido;
 
                   return (
-                    <div
-                      key={doc.id}
-                      className="flex flex-col sm:flex-row sm:items-center gap-2 px-3 py-3"
-                    >
+                    <div key={doc.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-xs font-medium text-slate-100">
-                            {doc.titulo}
-                          </p>
+                          <p className="text-xs font-medium text-slate-900">{doc.titulo}</p>
+
                           <span
                             className={`text-[10px] px-2 py-0.5 rounded-full border ${
                               doc.obligatorio
-                                ? 'border-amber-500 text-amber-300 bg-amber-500/10'
-                                : 'border-slate-500 text-slate-300 bg-slate-800/60'
+                                ? 'border-amber-200 text-amber-700 bg-amber-50'
+                                : 'border-slate-200 text-slate-600 bg-slate-50'
                             }`}
                           >
                             {doc.obligatorio ? 'Obligatorio' : 'Opcional'}
                           </span>
+
                           {yaSubido && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-500 text-emerald-200 bg-emerald-600/10">
+                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-200 text-emerald-700 bg-emerald-50">
                               Enviado
                             </span>
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-500 mt-0.5">
-                          {yaSubido
-                            ? 'Ya hemos recibido este documento.'
-                            : 'Formato PDF o imagen. Tamaño máximo según tu correo.'}
+
+                        <p className="text-[11px] text-slate-500 mt-1">
+                          {yaSubido ? 'Ya hemos recibido este documento.' : 'Formato PDF o imagen.'}
                         </p>
                       </div>
 
-                      <label className="sm:w-40 inline-flex items-center text-[11px] cursor-pointer justify-end">
+                      <label className="sm:w-44 inline-flex items-center justify-end text-[11px]">
                         <span
-                          className={`px-3 py-1 rounded-md border text-xs transition ${
+                          className={`px-3 py-2 rounded-lg border text-xs font-medium transition select-none ${
                             disabled
-                              ? 'border-slate-600 text-slate-500 bg-slate-800 cursor-not-allowed'
-                              : 'border-emerald-600 text-emerald-100 bg-emerald-900/40 hover:bg-emerald-800'
+                              ? 'border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed'
+                              : 'border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer'
                           }`}
                         >
-                          {yaSubido
-                            ? 'Enviado'
-                            : uploadingDocId === doc.id
-                            ? 'Subiendo…'
-                            : 'Subir archivo'}
+                          {yaSubido ? 'Enviado' : uploadingDocId === doc.id ? 'Subiendo…' : 'Subir archivo'}
                         </span>
                         <input
                           type="file"
@@ -418,31 +395,22 @@ export default function SeguimientoPage() {
         </section>
 
         {/* ---------------- TIMELINE ---------------- */}
-        <section className="rounded-lg border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-slate-200">
-            Historial del expediente
-          </h2>
-          <p className="text-xs text-slate-400">
-            Cambios de estado, avance y documentación añadida.
-          </p>
+        <section className={`${card} space-y-3`}>
+          <div className="space-y-1">
+            <h2 className={cardTitle}>Historial del expediente</h2>
+            <p className={`text-xs ${muted}`}>Cambios de estado, avance y documentación añadida.</p>
+          </div>
 
           {logs.length === 0 ? (
-            <p className="text-xs text-slate-500">
-              Aún no hay movimientos registrados.
-            </p>
+            <p className={`text-xs ${subtle}`}>Aún no hay movimientos registrados.</p>
           ) : (
-            <ul className="space-y-2 text-xs">
+            <ul className="space-y-3 text-xs">
               {logs.map((log) => (
-                <li
-                  key={log.id}
-                  className="flex gap-3 border-b border-slate-800 pb-2 last:border-b-0 last:pb-0"
-                >
-                  <div className="h-2 w-2 rounded-full bg-emerald-500 mt-0.5" />
-                  <div>
-                    <p className="text-slate-300">
-                      {log.descripcion || log.tipo}
-                    </p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
+                <li key={log.id} className="flex gap-3">
+                  <div className="h-2.5 w-2.5 rounded-full bg-emerald-600 mt-1" />
+                  <div className="flex-1 border-b border-slate-200 pb-3 last:border-b-0 last:pb-0">
+                    <p className="text-slate-800">{log.descripcion || log.tipo}</p>
+                    <p className="text-[10px] text-slate-500 mt-1">
                       {new Date(log.created_at).toLocaleString('es-ES')}
                     </p>
                   </div>
@@ -453,33 +421,26 @@ export default function SeguimientoPage() {
         </section>
 
         {/* ---------------- CHAT ---------------- */}
-        <section className="rounded-lg border border-emerald-700 bg-emerald-950/30 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-emerald-100">
-            Chat con tu gestor
-          </h2>
+        <section className={`${card} space-y-3`}>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className={cardTitle}>Chat con tu gestor</h2>
+            <span className="text-[11px] text-slate-500">Respuesta en el mismo enlace</span>
+          </div>
 
-          <div className="max-h-64 overflow-y-auto space-y-2 bg-slate-950/40 rounded-md p-2">
+          <div className="max-h-64 overflow-y-auto space-y-2 bg-slate-50 border border-slate-200 rounded-2xl p-3">
             {mensajes.length === 0 && (
-              <p className="text-xs text-slate-500">
-                No hay mensajes todavía.
-              </p>
+              <p className="text-xs text-slate-500">No hay mensajes todavía.</p>
             )}
 
             {mensajes.map((m) => {
               const esCliente = m.remitente === 'cliente';
-
               return (
-                <div
-                  key={m.id}
-                  className={`flex ${
-                    esCliente ? 'justify-end' : 'justify-start'
-                  }`}
-                >
+                <div key={m.id} className={`flex ${esCliente ? 'justify-end' : 'justify-start'}`}>
                   <div
-                    className={`max-w-[80%] rounded-lg px-3 py-2 text-xs space-y-1 ${
+                    className={`max-w-[84%] rounded-2xl px-3 py-2 text-xs space-y-1 ${
                       esCliente
-                        ? 'bg-emerald-600 text-slate-950'
-                        : 'bg-slate-800 text-white'
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-white border border-slate-200 text-slate-900'
                     }`}
                   >
                     {m.attachment_name && m.attachment_path && (
@@ -487,7 +448,9 @@ export default function SeguimientoPage() {
                         href={m.attachment_path}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="underline decoration-emerald-200 text-[11px]"
+                        className={`underline text-[11px] ${
+                          esCliente ? 'decoration-white/60' : 'decoration-slate-300'
+                        }`}
                       >
                         📎 {m.attachment_name}
                       </a>
@@ -505,23 +468,23 @@ export default function SeguimientoPage() {
           </div>
 
           {chatError && (
-            <div className="bg-red-900/40 border border-red-600 text-red-100 p-2 rounded-md text-[11px]">
+            <div className="bg-red-50 border border-red-200 text-red-700 p-3 rounded-2xl text-[11px]">
               {chatError}
             </div>
           )}
 
-          <div className="flex gap-2 pt-1">
+          <div className="flex flex-col sm:flex-row gap-2 pt-1">
             <input
               type="text"
               value={nuevoMensaje}
               onChange={(e) => setNuevoMensaje(e.target.value)}
               placeholder="Escribe tu mensaje…"
-              className="flex-1 rounded-md bg-slate-950 border border-emerald-700 px-3 py-2 text-xs text-slate-50 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+              className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
             <button
               onClick={handleSendMessage}
               disabled={!nuevoMensaje.trim() || enviando}
-              className="px-4 py-2 bg-emerald-500 text-slate-950 rounded-md text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-400"
+              className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-700"
             >
               {enviando ? 'Enviando…' : 'Enviar'}
             </button>
