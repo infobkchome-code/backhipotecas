@@ -64,6 +64,16 @@ const ESTADO_LABEL: Record<string, string> = {
   denegado: 'Denegado',
 };
 
+function formatLogDate(dateStr: string) {
+  const d = new Date(dateStr);
+  // dd/mm hh:mm
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mi = String(d.getMinutes()).padStart(2, '0');
+  return `${dd}/${mm} ${hh}:${mi}`;
+}
+
 // -----------------------------------------------------
 //                P Á G I N A   P R I N C I P A L
 // -----------------------------------------------------
@@ -225,7 +235,6 @@ export default function SeguimientoPage() {
         }
 
         setUploadedDocsLocal((prev) => ({ ...prev, [doc.id]: true }));
-
         setDocs((prev) => prev.map((d) => (d.id === doc.id ? { ...d, ya_subido: true } : d)));
 
         setUploadOk(`Se ha subido correctamente: "${doc.titulo}".`);
@@ -291,10 +300,7 @@ export default function SeguimientoPage() {
           <div className="space-y-2">
             <p className={`text-xs ${subtle}`}>Avance aproximado del expediente</p>
             <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
-              <div
-                className="h-2 bg-emerald-600 transition-all"
-                style={{ width: `${caso.progreso}%` }}
-              />
+              <div className="h-2 bg-emerald-600 transition-all" style={{ width: `${caso.progreso}%` }} />
             </div>
             <p className="text-xs text-slate-700">{caso.progreso}% completado</p>
           </div>
@@ -307,22 +313,22 @@ export default function SeguimientoPage() {
           )}
         </section>
 
-        {/* --------------- SUBIDA DOCUMENTOS ---------------- */}
+        {/* --------------- SUBIDA DOCUMENTOS (FILAS) ---------------- */}
         <section className={`${card} space-y-3`}>
-          <h2 className={cardTitle}>Documentación para el estudio</h2>
+          <div className="flex items-center justify-between gap-3">
+            <h2 className={cardTitle}>Documentación para el estudio</h2>
+            <span className="text-[11px] text-slate-500">
+              {docs.length === 0 ? 'Sin documentos' : `${docs.length} ítems`}
+            </span>
+          </div>
 
           {docs.length === 0 && (
-            <p className={`text-xs ${subtle}`}>
-              De momento no hay documentación que tengas que subir por aquí.
-            </p>
+            <p className={`text-xs ${subtle}`}>De momento no hay documentación que tengas que subir por aquí.</p>
           )}
 
           {docs.length > 0 && (
             <>
-              <p className={`text-xs ${muted}`}>
-                Sube aquí la documentación necesaria para tu hipoteca. Cada tipo de documento solo se puede
-                enviar una vez.
-              </p>
+              <p className={`text-xs ${muted}`}>Sube la documentación solicitada (PDF o imagen).</p>
 
               {uploadError && (
                 <div className="text-red-700 text-xs bg-red-50 p-3 rounded-xl border border-red-200">
@@ -336,98 +342,127 @@ export default function SeguimientoPage() {
                 </div>
               )}
 
-              <div className="divide-y divide-slate-200 rounded-2xl border border-slate-200 bg-white">
-                {docs.map((doc) => {
-                  const yaSubido = doc.ya_subido || uploadedDocsLocal[doc.id];
-                  const disabled = uploadingDocId === doc.id || yaSubido;
+              <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+                <div className="px-4 py-2 border-b border-slate-200 bg-slate-50">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] font-semibold text-slate-700">Listado</p>
+                    <p className="text-[11px] text-slate-500">Acción: Subir</p>
+                  </div>
+                </div>
 
-                  return (
-                    <div key={doc.id} className="flex flex-col sm:flex-row sm:items-center gap-3 px-4 py-4">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-xs font-medium text-slate-900">{doc.titulo}</p>
+                <div className="divide-y divide-slate-200">
+                  {docs.map((doc) => {
+                    const yaSubido = doc.ya_subido || uploadedDocsLocal[doc.id];
+                    const disabled = uploadingDocId === doc.id || yaSubido;
 
-                          <span
-                            className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                              doc.obligatorio
-                                ? 'border-amber-200 text-amber-700 bg-amber-50'
-                                : 'border-slate-200 text-slate-600 bg-slate-50'
-                            }`}
-                          >
-                            {doc.obligatorio ? 'Obligatorio' : 'Opcional'}
-                          </span>
+                    return (
+                      <div
+                        key={doc.id}
+                        className="px-4 py-3 flex flex-col sm:flex-row sm:items-center gap-2"
+                      >
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium text-slate-900 truncate">{doc.titulo}</p>
 
-                          {yaSubido && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-200 text-emerald-700 bg-emerald-50">
-                              Enviado
+                            <span
+                              className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                                doc.obligatorio
+                                  ? 'border-amber-200 text-amber-700 bg-amber-50'
+                                  : 'border-slate-200 text-slate-600 bg-slate-50'
+                              }`}
+                            >
+                              {doc.obligatorio ? 'Obligatorio' : 'Opcional'}
                             </span>
-                          )}
+
+                            {yaSubido && (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full border border-emerald-200 text-emerald-700 bg-emerald-50">
+                                Enviado
+                              </span>
+                            )}
+                          </div>
+
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            {yaSubido ? 'Recibido correctamente.' : 'Selecciona un archivo para enviar.'}
+                          </p>
                         </div>
 
-                        <p className="text-[11px] text-slate-500 mt-1">
-                          {yaSubido ? 'Ya hemos recibido este documento.' : 'Formato PDF o imagen.'}
-                        </p>
+                        <div className="sm:w-32 flex justify-end">
+                          <label className="inline-flex items-center">
+                            <span
+                              className={`px-3 py-2 rounded-lg border text-xs font-medium transition select-none ${
+                                disabled
+                                  ? 'border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed'
+                                  : 'border-slate-300 text-slate-800 bg-white hover:bg-slate-50 cursor-pointer'
+                              }`}
+                            >
+                              {yaSubido ? 'Enviado' : uploadingDocId === doc.id ? 'Subiendo…' : 'Subir'}
+                            </span>
+                            <input
+                              type="file"
+                              className="hidden"
+                              onChange={handleDocFileChange(doc)}
+                              disabled={disabled}
+                            />
+                          </label>
+                        </div>
                       </div>
-
-                      <label className="sm:w-44 inline-flex items-center justify-end text-[11px]">
-                        <span
-                          className={`px-3 py-2 rounded-lg border text-xs font-medium transition select-none ${
-                            disabled
-                              ? 'border-slate-200 text-slate-400 bg-slate-50 cursor-not-allowed'
-                              : 'border-emerald-200 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 cursor-pointer'
-                          }`}
-                        >
-                          {yaSubido ? 'Enviado' : uploadingDocId === doc.id ? 'Subiendo…' : 'Subir archivo'}
-                        </span>
-                        <input
-                          type="file"
-                          className="hidden"
-                          onChange={handleDocFileChange(doc)}
-                          disabled={disabled}
-                        />
-                      </label>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
+
+              <p className="text-[11px] text-slate-500">
+                Si tienes dudas con un documento, escríbenos por el chat.
+              </p>
             </>
           )}
         </section>
 
-        {/* ---------------- TIMELINE ---------------- */}
+        {/* ---------------- HISTORIAL (FILAS) ---------------- */}
         <section className={`${card} space-y-3`}>
-          <div className="space-y-1">
-            <h2 className={cardTitle}>Historial del expediente</h2>
-            <p className={`text-xs ${muted}`}>Cambios de estado, avance y documentación añadida.</p>
+          <div className="flex items-center justify-between gap-3">
+            <div className="space-y-1">
+              <h2 className={cardTitle}>Historial</h2>
+              <p className={`text-xs ${muted}`}>Movimientos y actualizaciones del expediente.</p>
+            </div>
+            <span className="text-[11px] text-slate-500">{logs.length} registros</span>
           </div>
 
           {logs.length === 0 ? (
             <p className={`text-xs ${subtle}`}>Aún no hay movimientos registrados.</p>
           ) : (
-            <ul className="space-y-3 text-xs">
-              {logs.map((log) => (
-                <li key={log.id} className="flex gap-3">
-                  <div className="h-2.5 w-2.5 rounded-full bg-emerald-600 mt-1" />
-                  <div className="flex-1 border-b border-slate-200 pb-3 last:border-b-0 last:pb-0">
-                    <p className="text-slate-800">{log.descripcion || log.tipo}</p>
-                    <p className="text-[10px] text-slate-500 mt-1">
-                      {new Date(log.created_at).toLocaleString('es-ES')}
-                    </p>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
+              <div className="px-4 py-2 border-b border-slate-200 bg-slate-50">
+                <div className="flex items-center justify-between">
+                  <p className="text-[11px] font-semibold text-slate-700">Fecha</p>
+                  <p className="text-[11px] font-semibold text-slate-700">Descripción</p>
+                </div>
+              </div>
+
+              <ul className="divide-y divide-slate-200">
+                {logs.map((log) => (
+                  <li key={log.id} className="px-4 py-3 flex gap-4">
+                    <div className="w-24 shrink-0 text-[11px] text-slate-500">
+                      {formatLogDate(log.created_at)}
+                    </div>
+                    <div className="flex-1 text-sm text-slate-800">
+                      {log.descripcion || log.tipo}
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </section>
 
-        {/* ---------------- CHAT ---------------- */}
+        {/* ---------------- CHAT (COMPACTO) ---------------- */}
         <section className={`${card} space-y-3`}>
           <div className="flex items-center justify-between gap-3">
-            <h2 className={cardTitle}>Chat con tu gestor</h2>
-            <span className="text-[11px] text-slate-500">Respuesta en el mismo enlace</span>
+            <h2 className={cardTitle}>Chat</h2>
+            <span className="text-[11px] text-slate-500">Escríbenos aquí</span>
           </div>
 
-          <div className="max-h-64 overflow-y-auto space-y-2 bg-slate-50 border border-slate-200 rounded-2xl p-3">
+          <div className="max-h-72 overflow-y-auto space-y-2 bg-slate-50 border border-slate-200 rounded-2xl p-3">
             {mensajes.length === 0 && (
               <p className="text-xs text-slate-500">No hay mensajes todavía.</p>
             )}
@@ -437,7 +472,7 @@ export default function SeguimientoPage() {
               return (
                 <div key={m.id} className={`flex ${esCliente ? 'justify-end' : 'justify-start'}`}>
                   <div
-                    className={`max-w-[84%] rounded-2xl px-3 py-2 text-xs space-y-1 ${
+                    className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs space-y-1 ${
                       esCliente
                         ? 'bg-emerald-600 text-white'
                         : 'bg-white border border-slate-200 text-slate-900'
@@ -473,22 +508,32 @@ export default function SeguimientoPage() {
             </div>
           )}
 
-          <div className="flex flex-col sm:flex-row gap-2 pt-1">
+          <div className="flex flex-col sm:flex-row gap-2">
             <input
               type="text"
               value={nuevoMensaje}
               onChange={(e) => setNuevoMensaje(e.target.value)}
               placeholder="Escribe tu mensaje…"
-              className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              className="flex-1 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  void handleSendMessage();
+                }
+              }}
             />
             <button
               onClick={handleSendMessage}
               disabled={!nuevoMensaje.trim() || enviando}
-              className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-700"
+              className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-emerald-700"
             >
               {enviando ? 'Enviando…' : 'Enviar'}
             </button>
           </div>
+
+          <p className="text-[11px] text-slate-500">
+            Consejo: si vas a enviar documentación, súbela en la sección “Documentación” para que quede registrada.
+          </p>
         </section>
       </main>
     </div>
