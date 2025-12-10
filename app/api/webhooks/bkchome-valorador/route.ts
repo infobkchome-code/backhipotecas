@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import supabaseAdmin from "@/lib/supabaseAdmin";
 
 function getIp(req: Request) {
   const xf = req.headers.get("x-forwarded-for");
@@ -10,7 +10,6 @@ function getIp(req: Request) {
 function corsHeaders(req: Request) {
   const origin = req.headers.get("origin");
   const allowed = new Set(["https://bkchome.es", "https://www.bkchome.es"]);
-
   const allowOrigin = origin ? (allowed.has(origin) ? origin : "https://bkchome.es") : "*";
 
   return {
@@ -52,29 +51,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, error: "Missing fields" }, { status: 400, headers });
   }
 
-  const ip = getIp(req);
-  const userAgent = req.headers.get("user-agent");
-
   // ✅ UTM nunca NULL
   const utm =
     body?.utm && typeof body.utm === "object" && !Array.isArray(body.utm)
       ? body.utm
       : {};
 
+  const ip = getIp(req);
+  const userAgent = req.headers.get("user-agent");
+
   const row = {
-    // trazabilidad
     source: "bkchome_valorador",
     ip,
     user_agent: userAgent,
     utm,
     raw: body,
 
-    // JSON completos (por si quieres)
+    // JSON completos
     property: step1,
     contact: step2,
     result,
 
-    // columnas “planas” para UI / filtros
+    // columnas planas
     name: step2?.name ?? null,
     phone: step2?.phone ?? null,
     email: step2?.email ?? null,
@@ -96,8 +94,7 @@ export async function POST(req: Request) {
     lon: geo?.lon != null ? Number(geo.lon) : null,
   };
 
-  const sb = supabaseAdmin();
-  const { error } = await sb.from("leads_valorador").insert(row);
+  const { error } = await supabaseAdmin.from("leads_valorador").insert(row);
 
   if (error) {
     return NextResponse.json({ ok: false, error: error.message }, { status: 500, headers });
