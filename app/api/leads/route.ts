@@ -1,95 +1,86 @@
-import { NextResponse } from "next/server";
+// app/api/valorador/bkchome/route.ts
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
-function supabaseAdmin() {
-  const url = process.env.SUPABASE_URL!;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-  return createClient(url, key, { auth: { persistSession: false } });
-}
-
-function bad(msg: string, status = 400) {
-  return NextResponse.json({ ok: false, error: msg }, { status });
-}
-
-export async function POST(req: Request) {
-  // ✅ Token “buzón” para que SOLO tu web pueda enviar leads
-  const token = req.headers.get("x-leads-token") || "";
-  if (!process.env.LEADS_INGEST_TOKEN || token !== process.env.LEADS_INGEST_TOKEN) {
-    return bad("Unauthorized", 401);
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: { persistSession: false },
   }
+);
 
-  const body = await req.json().catch(() => null);
-  if (!body) return bad("Invalid JSON");
+const ALLOWED_ORIGINS = [
+  "https://bkchome.vercel.app",
+  "https://bkchome.es",
+  "http://localhost:3000",
+];
 
-  const lead = {
-    source: body.source ?? "web",
-    status: "new",
-    name: (body.name ?? "").toString().slice(0, 120),
-    phone: (body.phone ?? "").toString().slice(0, 30),
-    email: (body.email ?? "").toString().slice(0, 180),
-
-    address: (body.address ?? "").toString().slice(0, 240),
-    city: (body.city ?? "").toString().slice(0, 120),
-    m2: body.m2 ? Number(body.m2) : null,
-    condition: (body.condition ?? "").toString().slice(0, 40),
-    has_garage: body.has_garage ?? null,
-    has_terrace: body.has_terrace ?? null,
-
-    utm_source: (body.utm_source ?? "").toString().slice(0, 120),
-    utm_campaign: (body.utm_campaign ?? "").toString().slice(0, 120),
-    utm_medium: (body.utm_medium ?? "").toString().slice(0, 120),
-    utm_content: (body.utm_content ?? "").toString().slice(0, 120),
-  };
-
-  if (!lead.phone && !lead.email) return bad("Falta teléfono o email");
-  if (!lead.city) return bad("Falta municipio");
-
-  const sb = supabaseAdmin();
-  const { data, error } = await sb.from("leads").insert(lead).select("id").single();
-
-  if (error) return bad(error.message, 500);
-  return NextResponse.json({ ok: true, id: data.id });
+function withCors(req: NextRequest, res: NextResponse) {
+  const origin = req.headers.get("origin") || "";
+  if (ALLOWED_ORIGINS.includes(origin)) {
+    res.headers.set("Access-Control-Allow-Origin", origin);
+  }
+  res.headers.set("Vary", "Origin");
+  res.headers.set("Access-Control-Allow-Methods", "POST,OPTIONS");
+  res.headers.set(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization"
+  );
+  res.headers.set("Access-Control-Allow-Credentials", "true");
+  return res;
 }
 
-export async function GET(req: Request) {
-  // ✅ Por ahora también con token (simple).
-  // Luego lo cambiamos a “solo logueado” cuando conectemos tu auth del CRM.
-  const token = req.headers.get("x-leads-token") || "";
-  if (!process.env.LEADS_INGEST_TOKEN || token !== process.env.LEADS_INGEST_TOKEN) {
-    return bad("Unauthorized", 401);
-  }
-
-  const { searchParams } = new URL(req.url);
-  const status = searchParams.get("status") || "new";
-
-  const sb = supabaseAdmin();
-  const { data, error } = await sb
-    .from("leads")
-    .select("*")
-    .eq("status", status)
-    .order("created_at", { ascending: false })
-    .limit(200);
-
-  if (error) return bad(error.message, 500);
-  return NextResponse.json({ ok: true, leads: data ?? [] });
+export async function OPTIONS(req: NextRequest) {
+  const res = NextResponse.json({}, { status: 200 });
+  return withCors(req, res);
 }
 
-export async function PATCH(req: Request) {
-  const token = req.headers.get("x-leads-token") || "";
-  if (!process.env.LEADS_INGEST_TOKEN || token !== process.env.LEADS_INGEST_TOKEN) {
-    return bad("Unauthorized", 401);
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+    const { step1, step2, result } = body || {};
+
+    if (!step2?.phone) {
+      const res = NextResponse.json(
+        { ok: false, error: "Falta teléfono" },
+        { status: 400 }
+      );
+      return withCors(req, res);
+    }
+
+    // 🔹 Inserta en una tabla genérica de leads del valorador
+    const { error } = await supabase.from("web_valorador_leads").insert({
+      source: "bkchome_valorador",
+      created_at: new Date().toISOString(),
+      nombre: step2?.name ?? null,
+      telefono: step2?.phone ?? null,
+      email: step2?.email ?? null,
+      ciudad: step1?.city ?? null,
+      direccion: step1?.address ?? null,
+      m2: step1?.size ? Number(step1.size) : null,
+      datos_vivienda: step1 ?? null,
+      datos_contacto: step2 ?? null,
+      resultado: result ?? null,
+    });
+
+    if (error) {
+      console.error("Error Supabase valorador:", error);
+      const res = NextResponse.json(
+        { ok: false, error: error.message },
+        { status: 500 }
+      );
+      return withCors(req, res);
+    }
+
+    const res = NextResponse.json({ ok: true }, { status: 200 });
+    return withCors(req, res);
+  } catch (err: any) {
+    console.error("Error en endpoint valorador:", err);
+    const res = NextResponse.json(
+      { ok: false, error: "Error inesperado" },
+      { status: 500 }
+    );
+    return withCors(req, res);
   }
-
-  const body = await req.json().catch(() => null);
-  const id = body?.id;
-  const status = body?.status;
-
-  if (!id) return bad("Falta id");
-  if (!["new", "contacted", "qualified", "lost"].includes(status)) return bad("Estado inválido");
-
-  const sb = supabaseAdmin();
-  const { error } = await sb.from("leads").update({ status }).eq("id", id);
-
-  if (error) return bad(error.message, 500);
-  return NextResponse.json({ ok: true });
 }
