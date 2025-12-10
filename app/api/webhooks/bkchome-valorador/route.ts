@@ -14,39 +14,44 @@ function getIp(req: Request) {
   return xf.split(",")[0]?.trim() ?? null;
 }
 
+function corsHeaders(req: Request) {
+  const origin = req.headers.get("origin"); // puede ser null en server-to-server
+  const allowed = new Set([
+    "https://bkchome.es",
+    "https://www.bkchome.es",
+  ]);
+
+  // Si no hay origin (llamada entre servidores), no hace falta CORS estricto
+  const allowOrigin = origin ? (allowed.has(origin) ? origin : "https://bkchome.es") : "*";
+
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Methods": "POST,OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type,x-bkc-webhook-key",
+    "Access-Control-Max-Age": "86400",
+    "Vary": "Origin",
+  };
+}
+
 export async function OPTIONS(req: Request) {
-  const origin = req.headers.get("origin") ?? "*";
-  return new NextResponse(null, {
-    status: 204,
-    headers: {
-      "Access-Control-Allow-Origin": origin,
-      "Access-Control-Allow-Methods": "POST,OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type,x-bkc-webhook-key",
-      "Access-Control-Max-Age": "86400",
-    },
-  });
+  return new NextResponse(null, { status: 204, headers: corsHeaders(req) });
 }
 
 export async function POST(req: Request) {
-  const origin = req.headers.get("origin") ?? "*";
+  const headers = corsHeaders(req);
+
   const secret = req.headers.get("x-bkc-webhook-key") ?? "";
   const expected = process.env.BKC_WEBHOOK_KEY ?? "";
 
   if (!expected || secret !== expected) {
-    return NextResponse.json(
-      { ok: false, error: "Unauthorized" },
-      { status: 401, headers: { "Access-Control-Allow-Origin": origin } }
-    );
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401, headers });
   }
 
-  let body: any = null;
+  let body: any;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      { ok: false, error: "Invalid JSON" },
-      { status: 400, headers: { "Access-Control-Allow-Origin": origin } }
-    );
+    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400, headers });
   }
 
   const step1 = body?.step1;
@@ -54,10 +59,7 @@ export async function POST(req: Request) {
   const result = body?.result ?? null;
 
   if (!step1?.address || !step1?.city || !step2?.name || !step2?.phone) {
-    return NextResponse.json(
-      { ok: false, error: "Missing fields" },
-      { status: 400, headers: { "Access-Control-Allow-Origin": origin } }
-    );
+    return NextResponse.json({ ok: false, error: "Missing fields" }, { status: 400, headers });
   }
 
   const sb = supabaseAdmin();
@@ -75,14 +77,8 @@ export async function POST(req: Request) {
   });
 
   if (error) {
-    return NextResponse.json(
-      { ok: false, error: error.message },
-      { status: 500, headers: { "Access-Control-Allow-Origin": origin } }
-    );
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500, headers });
   }
 
-  return NextResponse.json(
-    { ok: true },
-    { status: 200, headers: { "Access-Control-Allow-Origin": origin } }
-  );
+  return NextResponse.json({ ok: true }, { status: 200, headers });
 }
