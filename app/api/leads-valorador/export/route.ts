@@ -1,35 +1,76 @@
 import { NextResponse } from "next/server";
 import supabaseAdmin from "@/lib/supabaseAdmin";
 
-export async function GET(req: Request) {
-  const { searchParams } = new URL(req.url);
+export async function POST(req: Request) {
+  const dest = process.env.CRM_LEADS_TABLE || "crm_leads";
 
-  const q = (searchParams.get("q") || "").trim();
-  const exported = searchParams.get("exported"); // "yes" | "no" | null
-  const limit = Math.min(Number(searchParams.get("limit") || 50), 200);
-  const offset = Math.max(Number(searchParams.get("offset") || 0), 0);
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400 });
+  }
 
-  let query = supabaseAdmin
+  const id = body?.id as string | undefined;
+  if (!id) return NextResponse.json({ ok: false, error: "Missing id" }, { status: 400 });
+
+  const { data: lead, error: e1 } = await supabaseAdmin
     .from("leads_valorador")
-    .select("*", { count: "exact" })
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+    .select("*")
+    .eq("id", id)
+    .single();
 
-  if (q) {
-    const s = q.replace(/[%_]/g, "\\$&");
-    query = query.or(
-      `name.ilike.%${s}%,phone.ilike.%${s}%,email.ilike.%${s}%,city.ilike.%${s}%,address.ilike.%${s}%`
+  if (e1 || !lead) {
+    return NextResponse.json(
+      { ok: false, error: e1?.message || "Lead not found" },
+      { status: 404 }
     );
   }
 
-  if (exported === "yes") query = query.not("exported_at", "is", null);
-  if (exported === "no") query = query.is("exported_at", null);
+  const payload = {
+    origin_lead_id: lead.id,
+    source: lead.source ?? "bkchome_valorador",
 
-  const { data, error, count } = await query;
+    name: lead.name ?? null,
+    phone: lead.phone ?? null,
+    email: lead.email ?? null,
 
-  if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    address: lead.address ?? null,
+    city: lead.city ?? null,
+    type: lead.type ?? null,
+    size_m2: lead.size_m2 ?? null,
+    bedrooms: lead.bedrooms ?? null,
+    bathrooms: lead.bathrooms ?? null,
+    has_garage: lead.has_garage ?? null,
+    has_terrace: lead.has_terrace ?? null,
+    condition: lead.condition ?? null,
+
+    result_min: lead.result_min ?? null,
+    result_max: lead.result_max ?? null,
+    lat: lead.lat ?? null,
+    lon: lead.lon ?? null,
+
+    utm: lead.utm ?? {},
+    raw: lead.raw ?? null,
+  };
+
+  // upsert => si se pulsa 2 veces, no duplica
+  const { error: e2 } = await supabaseAdmin
+    .from(dest)
+    .upsert(payload, { onConflict: "origin_lead_id" });
+
+  if (e2) {
+    return NextResponse.json({ ok: false, error: e2.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, data: data ?? [], count: count ?? 0 });
+  const { error: e3 } = await supabaseAdmin
+    .from("leads_valorador")
+    .update({ exported_at: new Date().toISOString(), exported_to: dest })
+    .eq("id", id);
+
+  if (e3) {
+    return NextResponse.json({ ok: false, error: e3.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
 }
