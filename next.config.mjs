@@ -1,7 +1,10 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // output: "export", // ❌ QUITAR
-  // output: "standalone", // ✅ opcional
+  // 👇 IMPORTANTE: NO uses output:"export" en el CRM
+  // output: "export",
+
+  // (opcional) si quieres standalone:
+  // output: "standalone",
 };
 
-module.exports = nextConfig;
+export default nextConfig;
