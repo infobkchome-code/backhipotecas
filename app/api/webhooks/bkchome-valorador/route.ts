@@ -1,12 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-
-function supabaseAdmin() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!url || !key) throw new Error("Missing Supabase env vars");
-  return createClient(url, key, { auth: { persistSession: false } });
-}
+import { supabaseAdmin } from "@/lib/supabaseAdmin";
 
 function getIp(req: Request) {
   const xf = req.headers.get("x-forwarded-for");
@@ -15,15 +8,10 @@ function getIp(req: Request) {
 }
 
 function corsHeaders(req: Request) {
-  const origin = req.headers.get("origin"); // puede ser null en server-to-server
+  const origin = req.headers.get("origin");
   const allowed = new Set(["https://bkchome.es", "https://www.bkchome.es"]);
 
-  // Si no hay origin (llamada entre servidores), no hace falta CORS estricto
-  const allowOrigin = origin
-    ? allowed.has(origin)
-      ? origin
-      : "https://bkchome.es"
-    : "*";
+  const allowOrigin = origin ? (allowed.has(origin) ? origin : "https://bkchome.es") : "*";
 
   return {
     "Access-Control-Allow-Origin": allowOrigin,
@@ -45,60 +33,74 @@ export async function POST(req: Request) {
   const expected = process.env.BKC_WEBHOOK_KEY ?? "";
 
   if (!expected || secret !== expected) {
-    return NextResponse.json(
-      { ok: false, error: "Unauthorized" },
-      { status: 401, headers }
-    );
+    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401, headers });
   }
 
   let body: any;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      { ok: false, error: "Invalid JSON" },
-      { status: 400, headers }
-    );
+    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400, headers });
   }
 
-  const step1 = body?.step1;
-  const step2 = body?.step2;
-  const result = body?.result ?? null;
+  const step1 = body?.step1 || {};
+  const step2 = body?.step2 || {};
+  const result = body?.result || null;
+  const geo = body?.geo || null;
 
   if (!step1?.address || !step1?.city || !step2?.name || !step2?.phone) {
-    return NextResponse.json(
-      { ok: false, error: "Missing fields" },
-      { status: 400, headers }
-    );
+    return NextResponse.json({ ok: false, error: "Missing fields" }, { status: 400, headers });
   }
 
-  const sb = supabaseAdmin();
   const ip = getIp(req);
   const userAgent = req.headers.get("user-agent");
 
-  // ✅ además de JSON, guardamos columnas planas para filtrar rápido
-  const { error } = await sb.from("leads_valorador").insert({
-    source: "bkchome_valorador",
+  // ✅ UTM nunca NULL
+  const utm =
+    body?.utm && typeof body.utm === "object" && !Array.isArray(body.utm)
+      ? body.utm
+      : {};
 
-    // columnas planas (deben existir en la tabla)
+  const row = {
+    // trazabilidad
+    source: "bkchome_valorador",
+    ip,
+    user_agent: userAgent,
+    utm,
+    raw: body,
+
+    // JSON completos (por si quieres)
+    property: step1,
+    contact: step2,
+    result,
+
+    // columnas “planas” para UI / filtros
     name: step2?.name ?? null,
     phone: step2?.phone ?? null,
     email: step2?.email ?? null,
 
-    // JSON completo
-    property: step1,
-    contact: step2,
-    result,
-    utm: body?.utm ?? null,
-    ip,
-    user_agent: userAgent,
-  });
+    address: step1?.address ?? null,
+    city: step1?.city ?? null,
+    type: step1?.type ?? null,
+    size_m2: step1?.size ? Number(step1.size) : null,
+    bedrooms: step1?.bedrooms ? Number(step1.bedrooms) : null,
+    bathrooms: step1?.bathrooms ? Number(step1.bathrooms) : null,
+    has_garage: step1?.hasGarage === "si",
+    has_terrace: step1?.hasTerrace === "si",
+    condition: step1?.condition ?? null,
+
+    result_min: result?.minPrice ?? null,
+    result_max: result?.maxPrice ?? null,
+
+    lat: geo?.lat != null ? Number(geo.lat) : null,
+    lon: geo?.lon != null ? Number(geo.lon) : null,
+  };
+
+  const sb = supabaseAdmin();
+  const { error } = await sb.from("leads_valorador").insert(row);
 
   if (error) {
-    return NextResponse.json(
-      { ok: false, error: error.message },
-      { status: 500, headers }
-    );
+    return NextResponse.json({ ok: false, error: error.message }, { status: 500, headers });
   }
 
   return NextResponse.json({ ok: true }, { status: 200, headers });
