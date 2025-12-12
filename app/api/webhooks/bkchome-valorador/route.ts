@@ -1,104 +1,84 @@
-import { NextResponse } from "next/server";
-import supabaseAdmin from "@/lib/supabaseAdmin";
+import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-function getIp(req: Request) {
-  const xf = req.headers.get("x-forwarded-for");
-  if (!xf) return null;
-  return xf.split(",")[0]?.trim() ?? null;
+export const runtime = "nodejs";
+
+function admin() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !key) throw new Error("Missing Supabase env vars");
+  return createClient(url, key, { auth: { persistSession: false } });
 }
 
-function corsHeaders(req: Request) {
-  const origin = req.headers.get("origin");
-  const allowed = new Set(["https://bkchome.es", "https://www.bkchome.es"]);
-  const allowOrigin = origin ? (allowed.has(origin) ? origin : "https://bkchome.es") : "*";
-
-  return {
-    "Access-Control-Allow-Origin": allowOrigin,
-    "Access-Control-Allow-Methods": "POST,OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type,x-bkc-webhook-key",
-    "Access-Control-Max-Age": "86400",
-    Vary: "Origin",
-  };
+function ipFrom(req: NextRequest) {
+  const xf = req.headers.get("x-forwarded-for") || "";
+  return xf.split(",")[0]?.trim() || null;
 }
 
-export async function OPTIONS(req: Request) {
-  return new NextResponse(null, { status: 204, headers: corsHeaders(req) });
-}
-
-export async function POST(req: Request) {
-  const headers = corsHeaders(req);
-
-  const secret = req.headers.get("x-bkc-webhook-key") ?? "";
-  const expected = process.env.BKC_WEBHOOK_KEY ?? "";
-
-  if (!expected || secret !== expected) {
-    return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401, headers });
-  }
-
-  let body: any;
+export async function POST(req: NextRequest) {
   try {
-    body = await req.json();
-  } catch {
-    return NextResponse.json({ ok: false, error: "Invalid JSON" }, { status: 400, headers });
+    const sp = new URL(req.url).searchParams;
+
+    const secret =
+      req.headers.get("x-bkc-webhook-key") ||
+      sp.get("key") ||
+      "";
+
+    if (!process.env.BKC_WEBHOOK_KEY || secret !== process.env.BKC_WEBHOOK_KEY) {
+      return NextResponse.json({ ok: false, error: "Unauthorized" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const step1 = body?.step1 ?? {};
+    const step2 = body?.step2 ?? {};
+    const result = body?.result ?? {};
+    const utm = body?.utm ?? {};
+    const geo = body?.geo ?? null;
+
+    const payload: any = {
+      source: body?.source || "bkchome_valorador",
+
+      name: String(step2?.name || ""),
+      phone: String(step2?.phone || ""),
+      email: String(step2?.email || ""),
+
+      address: String(step1?.address || ""),
+      city: String(step1?.city || ""),
+      type: String(step1?.type || ""),
+      size_m2: step1?.size ? Number(step1.size) : null,
+      bedrooms: step1?.bedrooms ? Number(step1.bedrooms) : null,
+      bathrooms: step1?.bathrooms ? Number(step1.bathrooms) : null,
+      has_garage: step1?.hasGarage === "si",
+      has_terrace: step1?.hasTerrace === "si",
+      condition: String(step1?.condition || ""),
+
+      result_min: result?.minPrice ? Number(result.minPrice) : null,
+      result_max: result?.maxPrice ? Number(result.maxPrice) : null,
+
+      lat: geo?.lat ? Number(geo.lat) : null,
+      lon: geo?.lon ? Number(geo.lon) : null,
+
+      utm,
+      property: step1,
+      contact: step2,
+      result,
+
+      ip: ipFrom(req),
+      user_agent: req.headers.get("user-agent") || null,
+
+      status: "new",
+      raw: body,
+    };
+
+    const sb = admin();
+    const { error } = await sb.from("leads_valorador").insert(payload);
+
+    if (error) {
+      return NextResponse.json({ ok: false, error: error.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (e: any) {
+    return NextResponse.json({ ok: false, error: e?.message || "Error" }, { status: 500 });
   }
-
-  const step1 = body?.step1 || {};
-  const step2 = body?.step2 || {};
-  const result = body?.result || null;
-  const geo = body?.geo || null;
-
-  if (!step1?.address || !step1?.city || !step2?.name || !step2?.phone) {
-    return NextResponse.json({ ok: false, error: "Missing fields" }, { status: 400, headers });
-  }
-
-  // ✅ UTM nunca NULL
-  const utm =
-    body?.utm && typeof body.utm === "object" && !Array.isArray(body.utm)
-      ? body.utm
-      : {};
-
-  const ip = getIp(req);
-  const userAgent = req.headers.get("user-agent");
-
-  const row = {
-    source: "bkchome_valorador",
-    ip,
-    user_agent: userAgent,
-    utm,
-    raw: body,
-
-    // JSON completos
-    property: step1,
-    contact: step2,
-    result,
-
-    // columnas planas
-    name: step2?.name ?? null,
-    phone: step2?.phone ?? null,
-    email: step2?.email ?? null,
-
-    address: step1?.address ?? null,
-    city: step1?.city ?? null,
-    type: step1?.type ?? null,
-    size_m2: step1?.size ? Number(step1.size) : null,
-    bedrooms: step1?.bedrooms ? Number(step1.bedrooms) : null,
-    bathrooms: step1?.bathrooms ? Number(step1.bathrooms) : null,
-    has_garage: step1?.hasGarage === "si",
-    has_terrace: step1?.hasTerrace === "si",
-    condition: step1?.condition ?? null,
-
-    result_min: result?.minPrice ?? null,
-    result_max: result?.maxPrice ?? null,
-
-    lat: geo?.lat != null ? Number(geo.lat) : null,
-    lon: geo?.lon != null ? Number(geo.lon) : null,
-  };
-
-  const { error } = await supabaseAdmin.from("leads_valorador").insert(row);
-
-  if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500, headers });
-  }
-
-  return NextResponse.json({ ok: true }, { status: 200, headers });
 }
