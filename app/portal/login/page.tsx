@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
@@ -15,11 +15,6 @@ export default function LoginPage() {
 
   const redirectTo = searchParams.get('redirectTo') || '/portal';
 
-  // ... resto igual
-}
-
-
-  // Si ya hay sesión → saltar login
   useEffect(() => {
     (async () => {
       const { data } = await supabase.auth.getUser();
@@ -32,7 +27,10 @@ export default function LoginPage() {
     setErrorMsg(null);
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
     setLoading(false);
 
@@ -63,7 +61,9 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-200 mb-1">Correo electrónico</label>
+            <label className="block text-xs font-medium text-slate-200 mb-1">
+              Correo electrónico
+            </label>
             <input
               type="email"
               required
@@ -75,7 +75,9 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-200 mb-1">Contraseña</label>
+            <label className="block text-xs font-medium text-slate-200 mb-1">
+              Contraseña
+            </label>
             <input
               type="password"
               required
