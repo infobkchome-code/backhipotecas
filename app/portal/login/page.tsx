@@ -1,26 +1,34 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabaseClient';
 
 export default function LoginPage() {
   const router = useRouter();
+  const sp = useSearchParams();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  const redirectTo = searchParams.get('redirectTo') || '/portal';
+  const redirectTo = sp.get('redirectTo') || sp.get('next') || '/portal';
+
+  // Si ya hay sesión → saltar login
+  useEffect(() => {
+    (async () => {
+      const { data } = await supabase.auth.getUser();
+      if (data?.user) router.replace(redirectTo);
+    })();
+  }, [router, redirectTo]);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setErrorMsg(null);
     setLoading(true);
 
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     setLoading(false);
 
@@ -40,24 +48,18 @@ export default function LoginPage() {
             BKC
           </div>
           <div>
-            <div className="text-sm text-emerald-400 font-semibold">
-              BKC Hipotecas
-            </div>
-            <div className="text-lg font-semibold text-white">
-              Acceso al panel
-            </div>
+            <div className="text-sm text-emerald-400 font-semibold">BKC Hipotecas</div>
+            <div className="text-lg font-semibold text-white">Acceso al panel</div>
           </div>
         </div>
 
         <p className="text-xs text-slate-300 mb-4">
-          Introduce tu correo y contraseña para acceder al panel interno de expedientes hipotecarios.
+          Introduce tu correo y contraseña para acceder al panel interno.
         </p>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-xs font-medium text-slate-200 mb-1">
-              Correo electrónico
-            </label>
+            <label className="block text-xs font-medium text-slate-200 mb-1">Correo electrónico</label>
             <input
               type="email"
               required
@@ -69,9 +71,7 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium text-slate-200 mb-1">
-              Contraseña
-            </label>
+            <label className="block text-xs font-medium text-slate-200 mb-1">Contraseña</label>
             <input
               type="password"
               required
@@ -91,15 +91,13 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-2xl bg-emerald-500 text-slate-900 text-sm font-semibold py-2.5 mt-2 disabled:opacity-70 flex items-center justify-center gap-2"
+            className="w-full rounded-2xl bg-emerald-500 text-slate-900 text-sm font-semibold py-2.5 mt-2 disabled:opacity-70"
           >
             {loading ? 'Entrando…' : 'Entrar al panel'}
           </button>
         </form>
 
-        <p className="mt-4 text-[11px] text-slate-400">
-          Acceso restringido al equipo de BKC Hipotecas.
-        </p>
+        <p className="mt-4 text-[11px] text-slate-400">Acceso restringido al equipo.</p>
       </div>
     </div>
   );
