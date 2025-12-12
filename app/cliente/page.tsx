@@ -10,10 +10,10 @@ type Caso = {
   estado: string;
   progreso: number;
   created_at: string;
-  clientes?: {
-    nombre: string | null;
-  } | null;
-};
+clientes?: {
+  nombre: string | null;
+}[] | null;
+
 
 export default function ClienteDashboardPage() {
   const router = useRouter();
@@ -70,7 +70,7 @@ export default function ClienteDashboardPage() {
           <div>
             <p className="text-xs text-emerald-400 uppercase tracking-wide">Panel del cliente</p>
             <h1 className="text-2xl font-semibold mt-1">
-              Hola {caso.clientes?.nombre || ''}, este es el estado de tu hipoteca
+Hola {caso.clientes?.[0]?.nombre || ''}, este es el estado de tu hipoteca
             </h1>
           </div>
           <button
