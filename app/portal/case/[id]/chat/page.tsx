@@ -143,17 +143,19 @@ export default function ChatPage() {
         }),
       });
 
-      const data: ApiPostResponse = await res.json();
+   const data: ApiPostResponse = await res.json();
+const newMessage = data.message;
 
-      if (!res.ok || !data.ok || !data.message) {
-        console.error('Error enviando mensaje chat:', data.error);
-        setError(data.error ?? 'No se ha podido enviar el mensaje.');
-        return;
-      }
+if (!res.ok || !data.ok || !newMessage) {
+  console.error('Error enviando mensaje chat:', data.error);
+  setError(data.error ?? 'No se ha podido enviar el mensaje.');
+  return;
+}
 
-      setMessages((prev) => [...prev, data.message]);
-      setInputValue('');
-      setTimeout(scrollToBottom, 100);
+setMessages((prev) => [...prev, newMessage]);
+setInputValue('');
+setTimeout(scrollToBottom, 100);
+
     } catch (e: any) {
       console.error('Excepción enviando mensaje chat:', e);
       setError(e?.message ?? 'No se ha podido enviar el mensaje.');
