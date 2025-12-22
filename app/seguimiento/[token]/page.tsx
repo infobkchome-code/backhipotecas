@@ -80,7 +80,10 @@ function formatLogDate(dateStr: string) {
 
 export default function SeguimientoPage() {
   const params = useParams<{ token: string }>();
-  const token = params?.token;
+
+  // Next puede devolverte string | string[]; lo normalizamos a string
+  const tokenRaw = (params as any)?.token as string | string[] | undefined;
+  const token = Array.isArray(tokenRaw) ? tokenRaw[0] : tokenRaw;
 
   const [caso, setCaso] = useState<SeguimientoCaso | null>(null);
   const [logs, setLogs] = useState<LogItem[]>([]);
@@ -100,7 +103,9 @@ export default function SeguimientoPage() {
   const [uploadOk, setUploadOk] = useState<string | null>(null);
 
   // 🔒 control local: qué documentos ya se han subido en esta sesión
-  const [uploadedDocsLocal, setUploadedDocsLocal] = useState<Record<string, boolean>>({});
+  const [uploadedDocsLocal, setUploadedDocsLocal] = useState<
+    Record<string, boolean>
+  >({});
 
   // ---------------- ESTILOS BASE (visual portal) ----------------
   const pageWrap = 'min-h-screen bg-slate-100 text-slate-900';
@@ -128,7 +133,9 @@ export default function SeguimientoPage() {
         const json: ApiSeguimientoResponse = await res.json();
 
         if (!res.ok || !json.data) {
-          setErrorMsg('No hemos encontrado ningún expediente asociado a este enlace.');
+          setErrorMsg(
+            'No hemos encontrado ningún expediente asociado a este enlace.'
+          );
           setLoading(false);
           return;
         }
@@ -158,13 +165,14 @@ export default function SeguimientoPage() {
       });
 
       const json: ApiChatResponse = await res.json();
-      if (json.mensajes) setMensajes(json.mensajes);
+      if (Array.isArray(json.mensajes)) setMensajes(json.mensajes);
     } catch (e) {
       console.error('Error cargando chat:', e);
     }
   };
 
   useEffect(() => {
+    if (!token) return;
     loadChat();
     const interval = setInterval(loadChat, 10000);
     return () => clearInterval(interval);
@@ -186,12 +194,13 @@ export default function SeguimientoPage() {
 
       const json: ApiChatResponse = await res.json();
 
-      if (!json.ok || !json.mensaje) {
-        setChatError('Error enviando tu mensaje.');
+      if (!res.ok || !json.ok) {
+        setChatError(json.error || 'Error enviando tu mensaje.');
         return;
       }
 
-      setMensajes((prev) => [...prev, json.mensaje]);
+      // ✅ FIX TS: no añadimos undefined
+      setMensajes((prev) => (json.mensaje ? [...prev, json.mensaje] : prev));
       setNuevoMensaje('');
     } catch {
       setChatError('Error enviando tu mensaje.');
@@ -221,7 +230,7 @@ export default function SeguimientoPage() {
           body: form,
         });
 
-        const json = await res.json();
+        const json: ApiChatResponse & { ok?: boolean } = await res.json();
 
         if (!res.ok || !json.ok) {
           setUploadError(json.error || 'No se ha podido subir el archivo.');
@@ -230,12 +239,13 @@ export default function SeguimientoPage() {
           return;
         }
 
-        if (json.mensaje) {
-          setMensajes((prev) => [...prev, json.mensaje]);
-        }
+        // ✅ FIX TS: no añadimos undefined
+        setMensajes((prev) => (json.mensaje ? [...prev, json.mensaje] : prev));
 
         setUploadedDocsLocal((prev) => ({ ...prev, [doc.id]: true }));
-        setDocs((prev) => prev.map((d) => (d.id === doc.id ? { ...d, ya_subido: true } : d)));
+        setDocs((prev) =>
+          prev.map((d) => (d.id === doc.id ? { ...d, ya_subido: true } : d))
+        );
 
         setUploadOk(`Se ha subido correctamente: "${doc.titulo}".`);
         setTimeout(() => setUploadOk(null), 4000);
@@ -260,7 +270,9 @@ export default function SeguimientoPage() {
     return (
       <div className={`${pageWrap} flex items-center justify-center`}>
         <div className="text-center space-y-2 px-4">
-          <h1 className="text-lg font-semibold text-slate-900">Enlace de seguimiento no válido</h1>
+          <h1 className="text-lg font-semibold text-slate-900">
+            Enlace de seguimiento no válido
+          </h1>
           <p className="text-sm text-slate-600">{errorMsg}</p>
         </div>
       </div>
@@ -277,7 +289,9 @@ export default function SeguimientoPage() {
           <p className="text-xs uppercase tracking-[0.22em] text-slate-500">
             Seguimiento de expediente hipotecario
           </p>
-          <h1 className="text-2xl font-semibold text-slate-900">{caso.titulo}</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">
+            {caso.titulo}
+          </h1>
           <p className="text-xs text-slate-500">
             Creado el {new Date(caso.created_at).toLocaleDateString('es-ES')}
           </p>
@@ -293,14 +307,18 @@ export default function SeguimientoPage() {
               </span>
             </div>
             <p className="text-[11px] text-slate-500 sm:text-right">
-              Última actualización: {new Date(caso.updated_at).toLocaleString('es-ES')}
+              Última actualización:{' '}
+              {new Date(caso.updated_at).toLocaleString('es-ES')}
             </p>
           </div>
 
           <div className="space-y-2">
             <p className={`text-xs ${subtle}`}>Avance aproximado del expediente</p>
             <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
-              <div className="h-2 bg-emerald-600 transition-all" style={{ width: `${caso.progreso}%` }} />
+              <div
+                className="h-2 bg-emerald-600 transition-all"
+                style={{ width: `${caso.progreso}%` }}
+              />
             </div>
             <p className="text-xs text-slate-700">{caso.progreso}% completado</p>
           </div>
@@ -308,7 +326,9 @@ export default function SeguimientoPage() {
           {caso.notas && (
             <div className="pt-2 border-t border-slate-200">
               <p className={`text-xs ${subtle} mb-1`}>Comentarios de tu gestor</p>
-              <p className="text-sm text-slate-900 whitespace-pre-wrap">{caso.notas}</p>
+              <p className="text-sm text-slate-900 whitespace-pre-wrap">
+                {caso.notas}
+              </p>
             </div>
           )}
         </section>
@@ -323,12 +343,16 @@ export default function SeguimientoPage() {
           </div>
 
           {docs.length === 0 && (
-            <p className={`text-xs ${subtle}`}>De momento no hay documentación que tengas que subir por aquí.</p>
+            <p className={`text-xs ${subtle}`}>
+              De momento no hay documentación que tengas que subir por aquí.
+            </p>
           )}
 
           {docs.length > 0 && (
             <>
-              <p className={`text-xs ${muted}`}>Sube la documentación solicitada (PDF o imagen).</p>
+              <p className={`text-xs ${muted}`}>
+                Sube la documentación solicitada (PDF o imagen).
+              </p>
 
               {uploadError && (
                 <div className="text-red-700 text-xs bg-red-50 p-3 rounded-xl border border-red-200">
@@ -345,7 +369,9 @@ export default function SeguimientoPage() {
               <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
                 <div className="px-4 py-2 border-b border-slate-200 bg-slate-50">
                   <div className="flex items-center justify-between">
-                    <p className="text-[11px] font-semibold text-slate-700">Listado</p>
+                    <p className="text-[11px] font-semibold text-slate-700">
+                      Listado
+                    </p>
                     <p className="text-[11px] text-slate-500">Acción: Subir</p>
                   </div>
                 </div>
@@ -362,7 +388,9 @@ export default function SeguimientoPage() {
                       >
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <p className="text-sm font-medium text-slate-900 truncate">{doc.titulo}</p>
+                            <p className="text-sm font-medium text-slate-900 truncate">
+                              {doc.titulo}
+                            </p>
 
                             <span
                               className={`text-[10px] px-2 py-0.5 rounded-full border ${
@@ -382,7 +410,9 @@ export default function SeguimientoPage() {
                           </div>
 
                           <p className="text-[11px] text-slate-500 mt-0.5">
-                            {yaSubido ? 'Recibido correctamente.' : 'Selecciona un archivo para enviar.'}
+                            {yaSubido
+                              ? 'Recibido correctamente.'
+                              : 'Selecciona un archivo para enviar.'}
                           </p>
                         </div>
 
@@ -395,7 +425,11 @@ export default function SeguimientoPage() {
                                   : 'border-slate-300 text-slate-800 bg-white hover:bg-slate-50 cursor-pointer'
                               }`}
                             >
-                              {yaSubido ? 'Enviado' : uploadingDocId === doc.id ? 'Subiendo…' : 'Subir'}
+                              {yaSubido
+                                ? 'Enviado'
+                                : uploadingDocId === doc.id
+                                ? 'Subiendo…'
+                                : 'Subir'}
                             </span>
                             <input
                               type="file"
@@ -423,7 +457,9 @@ export default function SeguimientoPage() {
           <div className="flex items-center justify-between gap-3">
             <div className="space-y-1">
               <h2 className={cardTitle}>Historial</h2>
-              <p className={`text-xs ${muted}`}>Movimientos y actualizaciones del expediente.</p>
+              <p className={`text-xs ${muted}`}>
+                Movimientos y actualizaciones del expediente.
+              </p>
             </div>
             <span className="text-[11px] text-slate-500">{logs.length} registros</span>
           </div>
@@ -435,7 +471,9 @@ export default function SeguimientoPage() {
               <div className="px-4 py-2 border-b border-slate-200 bg-slate-50">
                 <div className="flex items-center justify-between">
                   <p className="text-[11px] font-semibold text-slate-700">Fecha</p>
-                  <p className="text-[11px] font-semibold text-slate-700">Descripción</p>
+                  <p className="text-[11px] font-semibold text-slate-700">
+                    Descripción
+                  </p>
                 </div>
               </div>
 
@@ -470,7 +508,10 @@ export default function SeguimientoPage() {
             {mensajes.map((m) => {
               const esCliente = m.remitente === 'cliente';
               return (
-                <div key={m.id} className={`flex ${esCliente ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  key={m.id}
+                  className={`flex ${esCliente ? 'justify-end' : 'justify-start'}`}
+                >
                   <div
                     className={`max-w-[85%] rounded-2xl px-3 py-2 text-xs space-y-1 ${
                       esCliente
@@ -532,7 +573,8 @@ export default function SeguimientoPage() {
           </div>
 
           <p className="text-[11px] text-slate-500">
-            Consejo: si vas a enviar documentación, súbela en la sección “Documentación” para que quede registrada.
+            Consejo: si vas a enviar documentación, súbela en la sección
+            “Documentación” para que quede registrada.
           </p>
         </section>
       </main>
