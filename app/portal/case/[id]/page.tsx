@@ -52,18 +52,29 @@ type NotaItem = {
   user_id: string | null;
 };
 
+type ChecklistDoc = {
+  id: string;
+  tipo: string;
+  descripcion: string | null;
+  obligatorio: boolean;
+  orden: number | null;
+};
+
 type ChecklistItem = {
   id: string;
   completado: boolean;
   completado_en: string | null;
   habilitar_cliente: boolean | null;
-  doc: {
-    id: string;
-    tipo: string;
-    descripcion: string | null;
-    obligatorio: boolean;
-    orden: number | null;
-  } | null;
+  doc: ChecklistDoc | null; // ✅ ya normalizado (objeto o null)
+};
+
+// 👇 lo que devuelve Supabase realmente (doc como array)
+type ChecklistItemRaw = {
+  id: string;
+  completado: boolean;
+  completado_en: string | null;
+  habilitar_cliente: boolean | null;
+  doc: ChecklistDoc[] | null;
 };
 
 const ESTADOS = [
@@ -225,7 +236,7 @@ export default function CaseDetailPage() {
     setChecklistLoading(true);
     setChecklistError(null);
 
-    let { data, error } = await supabase
+    const { data, error } = await supabase
       .from('casos_documentos_requeridos')
       .select(
         `
@@ -251,8 +262,13 @@ export default function CaseDetailPage() {
       return;
     }
 
+    // ✅ Si ya existe checklist, normalizamos doc: array -> objeto
     if (data && data.length > 0) {
-      const items = data as ChecklistItem[];
+      const items: ChecklistItem[] = (data as ChecklistItemRaw[]).map((row) => ({
+        ...row,
+        doc: row.doc?.[0] ?? null,
+      }));
+
       const ordered = [...items].sort((a, b) => {
         const oa = a.doc?.orden ?? 999;
         const ob = b.doc?.orden ?? 999;
@@ -261,6 +277,7 @@ export default function CaseDetailPage() {
         const sb = b.doc?.obligatorio ? 0 : 1;
         return sa - sb;
       });
+
       setChecklist(ordered);
       setChecklistLoading(false);
       return;
@@ -331,7 +348,13 @@ export default function CaseDetailPage() {
         return;
       }
 
-      const items2 = (data2 as ChecklistItem[]) || [];
+      const items2: ChecklistItem[] = ((data2 as ChecklistItemRaw[]) || []).map(
+        (row) => ({
+          ...row,
+          doc: row.doc?.[0] ?? null,
+        })
+      );
+
       const ordered2 = [...items2].sort((a, b) => {
         const oa = a.doc?.orden ?? 999;
         const ob = b.doc?.orden ?? 999;
@@ -340,6 +363,7 @@ export default function CaseDetailPage() {
         const sb = b.doc?.obligatorio ? 0 : 1;
         return sa - sb;
       });
+
       setChecklist(ordered2);
     } else {
       setChecklist([]);
@@ -672,9 +696,7 @@ export default function CaseDetailPage() {
       if (uploadError) {
         console.error('Error subiendo archivo:', uploadError);
         setDocsMsg(
-          `No se ha podido subir el documento: ${
-            uploadError.message ?? ''
-          }`
+          `No se ha podido subir el documento: ${uploadError.message ?? ''}`
         );
         setUploading(false);
         return;
@@ -694,9 +716,7 @@ export default function CaseDetailPage() {
 
       if (docError || !docInsert) {
         console.error('Error guardando metadatos:', docError);
-        setDocsMsg(
-          'El archivo se subió, pero no se pudieron guardar los metadatos.'
-        );
+        setDocsMsg('El archivo se subió, pero no se pudieron guardar los metadatos.');
       } else {
         setFiles((prev) => [docInsert as FileItem, ...prev]);
         setDocsMsg('Documento subido correctamente.');
@@ -763,13 +783,11 @@ export default function CaseDetailPage() {
     const texto = nuevaNota.trim();
     setNuevaNota('');
 
-    const { error: insertError } = await supabase
-      .from('expediente_notas')
-      .insert({
-        caso_id: caso.id,
-        user_id: userId,
-        contenido: texto,
-      });
+    const { error: insertError } = await supabase.from('expediente_notas').insert({
+      caso_id: caso.id,
+      user_id: userId,
+      contenido: texto,
+    });
 
     if (insertError) {
       console.error('Error guardando nota:', insertError);
@@ -823,10 +841,7 @@ export default function CaseDetailPage() {
         <p className="text-sm text-slate-500 mb-4">
           Puede que el enlace no sea correcto o que no tengas permisos sobre este expediente.
         </p>
-        <Link
-          href="/portal"
-          className="text-emerald-600 text-sm hover:underline"
-        >
+        <Link href="/portal" className="text-emerald-600 text-sm hover:underline">
           ← Volver al panel de clientes
         </Link>
       </div>
@@ -1216,9 +1231,7 @@ export default function CaseDetailPage() {
                       key={f.id}
                       className="border-t border-slate-200 hover:bg-slate-50"
                     >
-                      <td className="px-3 py-2 text-slate-900">
-                        {tipoLabel}
-                      </td>
+                      <td className="px-3 py-2 text-slate-900">{tipoLabel}</td>
                       <td className="px-3 py-2 text-slate-900 break-all">
                         {f.nombre_archivo}
                       </td>
@@ -1252,8 +1265,7 @@ export default function CaseDetailPage() {
                 Checklist de documentación para el estudio
               </h2>
               <p className="text-xs text-slate-500">
-                Aquí defines qué documentos necesita este expediente y si el
-                cliente puede subirlos desde su portal.
+                Aquí defines qué documentos necesita este expediente y si el cliente puede subirlos desde su portal.
               </p>
             </div>
             <div className="text-right">
@@ -1303,15 +1315,11 @@ export default function CaseDetailPage() {
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div>
-                        <p className="text-slate-900 font-medium">
-                          {nombreDoc}
-                        </p>
+                        <p className="text-slate-900 font-medium">{nombreDoc}</p>
                         {item.completado_en && (
                           <p className="text-[10px] text-slate-500 mt-1">
                             Marcado como completo el{' '}
-                            {new Date(
-                              item.completado_en
-                            ).toLocaleString('es-ES')}
+                            {new Date(item.completado_en).toLocaleString('es-ES')}
                           </p>
                         )}
                       </div>
@@ -1343,8 +1351,7 @@ export default function CaseDetailPage() {
                               : 'border-slate-300 text-slate-500 bg-slate-50'
                           }`}
                         >
-                          Cliente:{' '}
-                          {habilitado ? 'puede subir' : 'no puede subir'}
+                          Cliente: {habilitado ? 'puede subir' : 'no puede subir'}
                         </button>
                       </div>
                     </div>
@@ -1359,9 +1366,7 @@ export default function CaseDetailPage() {
                             : 'border-emerald-500 text-emerald-700 bg-emerald-50 hover:bg-emerald-100'
                         }`}
                       >
-                        {item.completado
-                          ? 'Marcar como pendiente'
-                          : 'Marcar como completo'}
+                        {item.completado ? 'Marcar como pendiente' : 'Marcar como completo'}
                       </button>
                     </div>
                   </div>
@@ -1379,8 +1384,7 @@ export default function CaseDetailPage() {
           {caso.seguimiento_token ? (
             <>
               <p className="text-xs text-emerald-800/80">
-                Copia este enlace o pulsa “Ver como cliente” para verlo tal y
-                como lo ve el cliente.
+                Copia este enlace o pulsa “Ver como cliente” para verlo tal y como lo ve el cliente.
               </p>
               <div className="bg-white border border-emerald-200 rounded-md px-3 py-2 text-xs break-all text-emerald-900">
                 {trackingUrl}
@@ -1415,8 +1419,7 @@ export default function CaseDetailPage() {
             Historial del expediente (solo interno)
           </h2>
           <p className="text-xs text-slate-500">
-            Aquí se registran automáticamente los cambios de estado, progreso,
-            notas y documentación. No es visible para el cliente.
+            Aquí se registran automáticamente los cambios de estado, progreso, notas y documentación. No es visible para el cliente.
           </p>
 
           {logs.length === 0 ? (
@@ -1432,14 +1435,10 @@ export default function CaseDetailPage() {
                 >
                   <div className="mt-0.5 h-2 w-2 rounded-full bg-emerald-500" />
                   <div>
-                    <div className="text-slate-800">
-                      {log.descripcion || log.tipo}
-                    </div>
+                    <div className="text-slate-800">{log.descripcion || log.tipo}</div>
                     <div className="text-[10px] text-slate-500 mt-0.5">
                       {new Date(log.created_at).toLocaleString('es-ES')}{' '}
-                      {log.visible_cliente
-                        ? '· Visible para cliente'
-                        : '· Solo interno'}
+                      {log.visible_cliente ? '· Visible para cliente' : '· Solo interno'}
                     </div>
                   </div>
                 </li>
@@ -1454,15 +1453,12 @@ export default function CaseDetailPage() {
             Notas internas del gestor
           </h2>
           <p className="text-xs text-slate-500">
-            Conversación interna sobre el expediente. Sólo la ves tú y tu
-            equipo, nunca el cliente.
+            Conversación interna sobre el expediente. Sólo la ves tú y tu equipo, nunca el cliente.
           </p>
 
           <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
             {notasLista.length === 0 && (
-              <p className="text-xs text-slate-500">
-                Todavía no hay notas internas.
-              </p>
+              <p className="text-xs text-slate-500">Todavía no hay notas internas.</p>
             )}
 
             {notasLista.map((nota) => (
